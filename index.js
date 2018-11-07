@@ -6,11 +6,7 @@ const EN_LIST = ['en-US', 'en-GB', 'en', 'en-AU'];
 
 module.exports.arguments = ['--restrict-filenames', '--write-sub', '--write-auto-sub', '--max-downloads', '1', '-f', '[height <=? 720][format_id != source]', '-j'];
 
-module.exports.process = (err, output) => {
-  if (err) {
-    throw err;
-  }
-
+module.exports.process = (output) => {
   let data;
   try {
     data = JSON.parse(output.toString().trim());
