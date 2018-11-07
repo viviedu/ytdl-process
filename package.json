@@ -1,0 +1,12 @@
+{
+  "name": "ytdl-wrapper",
+  "version": "1.0.0",
+  "description": "Node.js wrapper for our youtube-dl operations",
+  "main": "index.js",
+  "dependencies": {
+    "youtube-dl": "^1.12.2"
+  },
+  "engines": {
+    "node": "^10.13.0"
+  }
+}
