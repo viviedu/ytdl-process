@@ -1,7 +1,7 @@
 {
-  "name": "ytdl-wrapper",
+  "name": "ytdl-process",
   "version": "1.0.0",
-  "description": "Node.js wrapper for our youtube-dl operations",
+  "description": "Shared module for our youtube-dl processing",
   "main": "index.js",
   "dependencies": {
     "youtube-dl": "^1.12.2"

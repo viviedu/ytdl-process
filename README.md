@@ -1,2 +1,2 @@
-# ytdl-wrapper
-Node wrapper for our youtube-dl operations
+# ytdl-process
+Shared module for our youtube-dl processing
