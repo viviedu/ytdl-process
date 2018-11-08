@@ -1,38 +1,32 @@
 // constants
 const EN_LIST = ['en-US', 'en-GB', 'en', 'en-AU'];
+
+// public
+
 module.exports.ARGUMENTS = ['--restrict-filenames', '--write-sub', '--write-auto-sub', '--max-downloads', '1', '-f', '[height <=? 720][format_id != source]', '-j'];
-
-class YtdlProcess {
-  constructor(origin) {
-    this.origin = origin;
+module.exports.process = (output, origin) => {
+  let data;
+  try {
+    data = JSON.parse(output.toString().trim());
+  } catch (err) {
+    return null;
   }
 
-  process(output) {
-    let data;
-    try {
-      data = JSON.parse(output.toString().trim());
-    } catch (err) {
-      return null;
-    }
+  const subtitleFile = findBestSubtitleFile(data.subtitles) || findBestSubtitleFile(data.automatic_captions);
 
-    const subtitleFile = findBestSubtitleFile(data.subtitles) || findBestSubtitleFile(data.automatic_captions);
-
-    let subtitleUrl;
-    if (subtitleFile) {
-      subtitleUrl = `${this.origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}`;
-    }
-
-    return {
-      title: data.title,
-      url: data.url,
-      duration: data.duration,
-      subtitle_url: subtitleUrl,
-      cookies: data.http_headers.Cookie
-    };
+  let subtitleUrl;
+  if (subtitleFile) {
+    subtitleUrl = `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}`;
   }
-}
 
-module.exports = YtdlProcess;
+  return {
+    title: data.title,
+    url: data.url,
+    duration: data.duration,
+    subtitle_url: subtitleUrl,
+    cookies: data.http_headers.Cookie
+  };
+};
 
 // private
 
