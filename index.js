@@ -13,12 +13,17 @@ module.exports.process = (output, origin) => {
     subtitleUrl = `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}`;
   }
 
+  const { url } = data;
+  if (!url) {
+    throw 'no url';
+  }
+
   return {
-    title: data.title,
-    url: data.url,
+    title: data.title || 'Unknown',
+    url,
     duration: data.duration,
-    subtitle_url: subtitleUrl,
-    cookies: data.http_headers.Cookie
+    subtitle_url: subtitleUrl || '',
+    cookies: data.http_headers.Cookie || ''
   };
 };
 
