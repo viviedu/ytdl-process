@@ -18,7 +18,7 @@ module.exports.process = (output, origin) => {
   }
 
   return {
-    title: data.title || 'Unknown',
+    title: data.title || '',
     url,
     duration: data.duration || 0,
     subtitle_url: subtitleUrl || '',
