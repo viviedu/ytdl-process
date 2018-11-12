@@ -6,19 +6,23 @@ const EN_LIST = ['en-US', 'en-GB', 'en', 'en-AU'];
 module.exports.ARGUMENTS = ['--restrict-filenames', '--write-sub', '--write-auto-sub', '--max-downloads', '1', '-f', '[height <=? 720][format_id != source]', '-j'];
 module.exports.process = (output, origin) => {
   const data = JSON.parse(output.toString().trim());
-  const subtitleFile = findBestSubtitleFile(data.subtitles) || findBestSubtitleFile(data.automatic_captions);
+  const { url } = data;
+  if (!url) {
+    throw 'no url';
+  }
 
+  const subtitleFile = findBestSubtitleFile(data.subtitles) || findBestSubtitleFile(data.automatic_captions);
   let subtitleUrl;
   if (subtitleFile) {
     subtitleUrl = `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}`;
   }
 
   return {
-    title: data.title,
-    url: data.url,
-    duration: data.duration,
-    subtitle_url: subtitleUrl,
-    cookies: data.http_headers.Cookie
+    title: data.title || 'Unknown',
+    url,
+    duration: data.duration || 0,
+    subtitle_url: subtitleUrl || '',
+    cookies: data.http_headers.Cookie || ''
   };
 };
 
