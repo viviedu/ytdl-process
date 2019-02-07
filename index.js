@@ -4,7 +4,7 @@ const EN_LIST = ['en-US', 'en-GB', 'en', 'en-AU'];
 // public
 
 module.exports.isPlaylist = (url) => {
-  return url.startsWith('https://www.youtube.com/') && url.includes('?list=');
+  return url.startsWith('https://www.youtube.com/playlist?list=');
 };
 
 module.exports.getArguments = (isPlaylist) => {
