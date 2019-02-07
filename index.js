@@ -3,16 +3,12 @@ const EN_LIST = ['en-US', 'en-GB', 'en', 'en-AU'];
 
 // public
 
+module.exports.ARGUMENTS = ['--restrict-filenames', '--write-sub', '--write-auto-sub', '--max-downloads', '1', '-f', '[height <=? 720][format_id != source]', '-j'];
+
+module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-j'];
+
 module.exports.isPlaylist = (url) => {
   return url.startsWith('https://www.youtube.com/playlist?list=');
-};
-
-module.exports.getArguments = (isPlaylist) => {
-  if (isPlaylist) {
-    return ['--flat-playlist', '-j'];
-  } else {
-    return ['--restrict-filenames', '--write-sub', '--write-auto-sub', '--max-downloads', '1', '-f', '[height <=? 720][format_id != source]', '-j'];
-  }
 };
 
 module.exports.process = (output, origin) => {
