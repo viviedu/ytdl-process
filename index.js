@@ -34,7 +34,7 @@ module.exports.process = (output, origin) => {
 };
 
 module.exports.processPlaylist = (output) => {
-  return output.toString().split('\n').map((string) => {
+  return output.toString().trim().split('\n').map((string) => {
     const video = JSON.parse(string);
     return `https://www.youtube.com/watch?v=${video.id}`;
   });
