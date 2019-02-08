@@ -4,6 +4,13 @@ const EN_LIST = ['en-US', 'en-GB', 'en', 'en-AU'];
 // public
 
 module.exports.ARGUMENTS = ['--restrict-filenames', '--write-sub', '--write-auto-sub', '--max-downloads', '1', '-f', '[height <=? 720][format_id != source]', '-j'];
+
+module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-j'];
+
+module.exports.isPlaylist = (url) => {
+  return url.startsWith('https://www.youtube.com/playlist?list=');
+};
+
 module.exports.process = (output, origin) => {
   const data = JSON.parse(output.toString().trim());
   const { url } = data;
@@ -24,6 +31,13 @@ module.exports.process = (output, origin) => {
     subtitle_url: subtitleUrl || '',
     cookies: data.http_headers.Cookie || ''
   };
+};
+
+module.exports.processPlaylist = (output) => {
+  return output.toString().trim().split('\n').map((string) => {
+    const video = JSON.parse(string);
+    return `https://www.youtube.com/watch?v=${video.id}`;
+  });
 };
 
 // private
