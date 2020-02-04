@@ -19,16 +19,13 @@ module.exports.process = (output, origin) => {
   }
 
   const subtitleFile = findBestSubtitleFile(data.subtitles) || findBestSubtitleFile(data.automatic_captions);
-  let subtitleUrl;
-  if (subtitleFile) {
-    subtitleUrl = `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}`;
-  }
+  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
 
   return {
     title: data.title || '',
     url,
     duration: data.duration || 0,
-    subtitle_url: subtitleUrl || '',
+    subtitle_url: subtitleUrl,
     cookies: data.http_headers.Cookie || ''
   };
 };
@@ -42,8 +39,8 @@ module.exports.processPlaylist = (output) => {
 
 // private
 
-function findBestSubtitleFile(list = {}) {
-  return Object.keys(list)
+function findBestSubtitleFile(list) {
+  return Object.keys(list || {})
     .filter((lang) => lang.toString().substring(0,2) === 'en')
     .map((lang) => ({
       lang,
