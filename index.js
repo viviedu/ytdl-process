@@ -3,7 +3,7 @@ const EN_LIST = ['en-US', 'en-GB', 'en', 'en-AU'];
 
 // public
 
-module.exports.ARGUMENTS = ['--restrict-filenames', '--write-sub', '--write-auto-sub', '--max-downloads', '1', '-f', '[height <=? 720][format_id != source]', '-j'];
+module.exports.ARGUMENTS = ['--restrict-filenames', '--write-sub', '--write-auto-sub', '--no-playlist', '-f', '[height <=? 720][format_id != source]', '-j'];
 
 module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-j'];
 
