@@ -1,3 +1,6 @@
+const { spawn } = require('child_process');
+const { join } = require('path');
+
 // constants
 const EN_LIST = ['en-US', 'en-GB', 'en', 'en-AU'];
 
@@ -36,6 +39,10 @@ module.exports.processPlaylist = (output) => {
     return `https://www.youtube.com/watch?v=${video.id}`;
   });
 };
+
+module.exports.spawnPythonService = () => {
+  return spawn(join(__dirname, 'service.py'));
+}
 
 // private
 
