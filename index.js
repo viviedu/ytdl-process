@@ -30,12 +30,13 @@ module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-j'];
 
 const timescale = 48000;
 
-const generateManifestDataUrl = (data) => {
+const generateManifest = (data) => {
   const { duration, ext, format_id, fragments, fragment_base_url } = data;
   const durationString = `PT${Math.floor(duration / 60)}M${duration % 60}S`
   let time = 0;
 
-  const manifestString = `<?xml version="1.0" encoding="UTF-8"?>
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>
     <MPD
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xmlns="urn:mpeg:dash:schema:mpd:2011"
@@ -61,18 +62,47 @@ const generateManifestDataUrl = (data) => {
           </Representation>
         </AdaptationSet>
       </Period>
-    </MPD>`;
-
-  return (
-    `data:application/dash+xml;base64,${Buffer.from(manifestString).toString('base64')}`
-  )
+    </MPD>`
+  );
 };
 
 module.exports.isPlaylist = (url) => {
   return url.startsWith('https://www.youtube.com/playlist?list=');
 };
 
+// The "old" process method. It will sometimes return DASH manifests. These
+// manifests may be more than what iMX can handle, so use `processV2` for
+// boxes on version 2.8.5 or later.
 module.exports.process = (output, origin) => {
+  const data = JSON.parse(output.toString().trim());
+  const { automatic_captions, subtitles, url } = data;
+
+  const cookies = data.http_headers && data.http_headers.Cookie || '';
+  const duration = data.duration || 0;
+  const subtitleFile = findBestSubtitleFile(subtitles) || findBestSubtitleFile(automatic_captions);
+  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+  const title = data.title || '';
+
+  if (url) {
+    return {
+      cookies,
+      duration,
+      subtitle_url: subtitleUrl,
+      title,
+      url
+    };
+  }
+
+  throw 'no url';
+};
+
+// Creates fake manifests for DASH. Should be used on iMX after version 2.8.5
+// not suitable for previous versions since they have a bug that prevents these
+// fake manifests from being played
+// We may need a v3 process if we want to support higher resolutions on
+// Android. Mixed iMX and Android multi display rooms will need to have two
+// ytdl requests to get both resolutions
+module.exports.processV2 = (output, origin) => {
   const data = JSON.parse(output.toString().trim());
   const { automatic_captions, subtitles, url } = data;
 
@@ -84,16 +114,18 @@ module.exports.process = (output, origin) => {
 
   if (data.fragments) {
     return {
+      type: 'manifest',
       cookies,
       duration,
+      manifest: generateManifest(data),
       subtitle_url: subtitleUrl,
       title,
-      url: generateManifestDataUrl(data),
     };
   }
 
   if (url) {
     return {
+      type: 'url',
       cookies,
       duration,
       subtitle_url: subtitleUrl,
