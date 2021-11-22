@@ -30,9 +30,22 @@ module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-j'];
 
 const timescale = 48000;
 
+const generateDurationString = (totalSeconds) => {
+  const secondsString = `${totalSeconds % 60}S`;
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const minutesString = minutes > 0 ? `${minutes}M` : '';
+
+  const hours = Math.floor(totalMinutes / 60);
+  const hoursString = hours > 0 ? `${hours}H` : '';
+
+  return `PT${hoursString}${minutesString}${secondsString}`;
+}
+
 const generateManifest = (data) => {
   const { duration, ext, format_id, fragments, fragment_base_url } = data;
-  const durationString = `PT${Math.floor(duration / 60)}M${duration % 60}S`
+  const durationString = generateDurationString(duration);
   let time = 0;
 
   return (
