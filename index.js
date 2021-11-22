@@ -62,14 +62,14 @@ const generateManifest = (data) => {
         <AdaptationSet mimeType="video/${ext}">
           <Representation id="${format_id}" bandwidth="4382360">
             <SegmentList timescale="${timescale}">
-              ${fragments.map((fragment) => `<SegmentURL media="${fragment.path}" />`)}
+              ${fragments.map((fragment) => `<SegmentURL media="${fragment.path}" />`).join('')}
               <SegmentTimeline> 
                 ${fragments.map((fragment) => {
                   const duration = (fragment.duration || 0.01) * timescale;
-                  const segment = `<S t="${time}" d="${duration}"></S>`;
+                  const segment = `<S t="${time}" d="${duration}"/>`;
                   time += duration;
                   return segment;
-                })}
+                }).join('')}
               </SegmentTimeline>
             </SegmentList>
           </Representation>
