@@ -30,9 +30,22 @@ module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-j'];
 
 const timescale = 48000;
 
+const generateDurationString = (totalSeconds) => {
+  const secondsString = `${totalSeconds % 60}S`;
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const minutesString = minutes > 0 ? `${minutes}M` : '';
+
+  const hours = Math.floor(totalMinutes / 60);
+  const hoursString = hours > 0 ? `${hours}H` : '';
+
+  return `PT${hoursString}${minutesString}${secondsString}`;
+}
+
 const generateManifest = (data) => {
   const { duration, ext, format_id, fragments, fragment_base_url } = data;
-  const durationString = `PT${Math.floor(duration / 60)}M${duration % 60}S`
+  const durationString = generateDurationString(duration);
   let time = 0;
 
   return (
@@ -49,14 +62,14 @@ const generateManifest = (data) => {
         <AdaptationSet mimeType="video/${ext}">
           <Representation id="${format_id}" bandwidth="4382360">
             <SegmentList timescale="${timescale}">
-              ${fragments.map((fragment) => `<SegmentURL media="${fragment.path}" />`)}
+              ${fragments.map((fragment) => `<SegmentURL media="${fragment.path}" />`).join('')}
               <SegmentTimeline> 
                 ${fragments.map((fragment) => {
                   const duration = (fragment.duration || 0.01) * timescale;
-                  const segment = `<S t="${time}" d="${duration}"></S>`;
+                  const segment = `<S t="${time}" d="${duration}"/>`;
                   time += duration;
                   return segment;
-                })}
+                }).join('')}
               </SegmentTimeline>
             </SegmentList>
           </Representation>
