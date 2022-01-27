@@ -1,6 +1,6 @@
 {
   "name": "ytdl-process",
-  "version": "1.0.2",
+  "version": "1.0.2+box",
   "description": "Shared module for our youtube-dl processing",
   "main": "index.js"
 }
