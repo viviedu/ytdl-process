@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from sys import stderr
 from urllib.parse import parse_qs, urlparse
-from yt_dlp import YoutubeDL
+from youtube_dl import YoutubeDL
 
 class Handler(BaseHTTPRequestHandler):
     error_message_format = '%(explain)s'
