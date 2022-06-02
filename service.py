@@ -13,13 +13,20 @@ class Handler(BaseHTTPRequestHandler):
         self.response = ''
         # this actually calls do_GET, so do our own stuff first
         super().__init__(*args, **kwargs)
-
+    
+    def info(self, msg):
+        if msg[:1] == '{' and msg[-1:] == '}':
+            self.response += "{}\n".format(msg)
+        else:
+            print("ydl debug: {}".format(msg), file=stderr)
+    """
     def debug(self, msg):
         if msg[:1] == '{' and msg[-1:] == '}':
             self.response += "{}\n".format(msg)
         else:
             print("ydl debug: {}".format(msg), file=stderr)
-
+    """
+    
     def warning(self, msg):
         print("ydl warning: {}".format(msg), file=stderr)
         pass
