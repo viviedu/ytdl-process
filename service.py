@@ -5,6 +5,7 @@ from socketserver import ThreadingMixIn
 from sys import stderr
 from urllib.parse import parse_qs, urlparse
 from yt_dlp import YoutubeDL
+import json
 
 class Handler(BaseHTTPRequestHandler):
     error_message_format = '%(explain)s'
@@ -56,12 +57,10 @@ class Handler(BaseHTTPRequestHandler):
 
         ydl = YoutubeDL(ydl_opts)
         try:
-            retcode = ydl.download(qs['url'])
+            info = ydl.extract_info(qs['url'][0], download=False)
+            self.response = json.dumps(ydl.sanitize_info(info))
         except Exception as ex:
             self.fail("ydl exception: {}".format(repr(ex)))
-            return
-        if retcode != 0:
-            self.fail("ydl exit: {}".format(retcode))
             return
 
         response_bytes = self.response.encode()
