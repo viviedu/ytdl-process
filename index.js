@@ -151,10 +151,13 @@ module.exports.processV2 = (output, origin) => {
 };
 
 module.exports.processPlaylist = (output) => {
-  return output.toString().trim().split('\n').map((string) => {
-    const video = JSON.parse(string);
-    return `https://www.youtube.com/watch?v=${video.id}`;
-  });
+  let outputJSON = JSON.parse(output)
+  if (outputJSON["entries"]) {
+    entries = outputJSON["entries"]
+    return entries.map((video) => {
+      return `https://www.youtube.com/watch?v=${video.id}`;
+    });
+  }
 };
 
 module.exports.spawnPythonService = () => {
