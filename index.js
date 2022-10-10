@@ -151,12 +151,9 @@ module.exports.processV2 = (output, origin) => {
 };
 
 module.exports.processPlaylist = (output) => {
-  let outputJSON = JSON.parse(output)
+  const outputJSON = JSON.parse(output)
   if (outputJSON["entries"]) {
-    entries = outputJSON["entries"]
-    return entries.map((video) => {
-      return `https://www.youtube.com/watch?v=${video.id}`;
-    });
+    return outputJSON["entries"].map((video) => `https://www.youtube.com/watch?v=${video.id}`);
   }
 };
 
