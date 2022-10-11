@@ -8,8 +8,6 @@ from yt_dlp import YoutubeDL
 import json
 
 class Handler(BaseHTTPRequestHandler):
-    error_message_format = '%(explain)s'
-
     def debug(self, msg):
         print("ydl debug: {}".format(msg), file=stderr)
 
