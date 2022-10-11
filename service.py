@@ -5,20 +5,11 @@ from socketserver import ThreadingMixIn
 from sys import stderr
 from urllib.parse import parse_qs, urlparse
 from yt_dlp import YoutubeDL
+import json
 
 class Handler(BaseHTTPRequestHandler):
-    error_message_format = '%(explain)s'
-
-    def __init__(self, *args, **kwargs):
-        self.response = ''
-        # this actually calls do_GET, so do our own stuff first
-        super().__init__(*args, **kwargs)
-
     def debug(self, msg):
-        if msg[:1] == '{' and msg[-1:] == '}':
-            self.response += "{}\n".format(msg)
-        else:
-            print("ydl debug: {}".format(msg), file=stderr)
+        print("ydl debug: {}".format(msg), file=stderr)
 
     def warning(self, msg):
         print("ydl warning: {}".format(msg), file=stderr)
@@ -55,16 +46,15 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         ydl = YoutubeDL(ydl_opts)
+        response = ""
         try:
-            retcode = ydl.download(qs['url'])
+            info = ydl.extract_info(qs['url'][0], download=False)
+            response = json.dumps(ydl.sanitize_info(info))
         except Exception as ex:
             self.fail("ydl exception: {}".format(repr(ex)))
             return
-        if retcode != 0:
-            self.fail("ydl exit: {}".format(retcode))
-            return
 
-        response_bytes = self.response.encode()
+        response_bytes = response.encode()
         self.send_response(200)
         self.send_header('Content-Type', 'text/plain')
         self.send_header('Content-Length', len(response_bytes))
