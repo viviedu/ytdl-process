@@ -155,6 +155,7 @@ module.exports.processPlaylist = (output) => {
   if (outputJSON["entries"]) {
     return outputJSON["entries"].map((video) => `https://www.youtube.com/watch?v=${video.id}`);
   }
+  return [];
 };
 
 module.exports.spawnPythonService = () => {
