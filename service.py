@@ -10,10 +10,6 @@ import json
 class Handler(BaseHTTPRequestHandler):
     error_message_format = '%(explain)s'
 
-    def __init__(self, *args, **kwargs):
-        # this actually calls do_GET, so do our own stuff first
-        super().__init__(*args, **kwargs)
-
     def debug(self, msg):
         print("ydl debug: {}".format(msg), file=stderr)
 
