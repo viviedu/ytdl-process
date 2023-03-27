@@ -13,6 +13,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def warning(self, msg):
         print("ydl warning: {}".format(msg), file=stderr)
+
+        # 429 responses that come through as warnings fail to
+        # be caught by the ytdl service, so we must escalate them
+        # to errors
+        if '429' in msg or 'Too Many Request' in msg:
+            self.fail(msg)
         pass
 
     def error(self, msg):
@@ -21,7 +27,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def fail(self, msg):
         print(msg, file=stderr)
-        self.send_error(500, explain=msg)
+        # create our own error response rather than using send_error to
+        # avoid bloating response with HTML wrapping
+        response_bytes = msg.encode()
+        self.send_response(500)
+        self.send_header('Content-Type', 'text/plain')
+        self.send_header('Content-Length', len(response_bytes))
+        self.end_headers()
+        self.wfile.write(response_bytes)
+
+
 
     def do_GET(self):
         url = urlparse(self.path)
