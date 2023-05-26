@@ -23,10 +23,10 @@ module.exports.ARGUMENTS = [
   '--write-auto-sub',
   '--no-playlist',
   '-f', `(${formatPreferences})${commonProperties}`,
-  '-j'
+  '-J'
 ];
 
-module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-j'];
+module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-J'];
 
 const timescale = 48000;
 
