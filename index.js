@@ -158,8 +158,8 @@ module.exports.processPlaylist = (output) => {
   return [];
 };
 
-module.exports.spawnPythonService = () => {
-  return spawn(join(__dirname, 'service.py'));
+module.exports.spawnPythonService = (additional_env = {}) => {
+  return spawn(join(__dirname, 'service.py'), [], { env: { ...process.env, ...additional_env } });
 }
 
 // private
