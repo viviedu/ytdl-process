@@ -95,6 +95,7 @@ module.exports.process = (output, origin) => {
   const subtitleFile = findBestSubtitleFile(subtitles) || findBestSubtitleFile(automatic_captions);
   const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
   const title = data.title || '';
+  const thumbnail = data.thumbnail || '';
 
   if (url) {
     return {
@@ -102,7 +103,8 @@ module.exports.process = (output, origin) => {
       duration,
       subtitle_url: subtitleUrl,
       title,
-      url
+      url,
+      thumbnail
     };
   }
 
