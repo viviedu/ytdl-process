@@ -49,7 +49,7 @@ class Handler(BaseHTTPRequestHandler):
             'simulate': True
         }
         if url.path == '/process':
-            ydl_opts['format'] = '(best[height = 1080][fps <= 30]/best[height <=? 720])[format_id!=source][vcodec!*=av01][vcodec!*=vp9]'
+            ydl_opts['format'] = 'bestaudio[format_id!=source][vcodec!*=av01][vcodec!*=vp9]'
             ydl_opts['noplaylist'] = True
             ydl_opts['restrictfilenames'] = True
             ydl_opts['writeautomaticsub'] = True

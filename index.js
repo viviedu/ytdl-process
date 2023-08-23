@@ -152,6 +152,43 @@ module.exports.processV2 = (output, origin) => {
   throw 'no url';
 };
 
+module.exports.processV3 = (output, origin) => {
+  const data = JSON.parse(output.toString().trim());
+  const { automatic_captions, formats, subtitles, url: audio_url } = data;
+
+  const cookies = data.http_headers && data.http_headers.Cookie || '';
+  const duration = data.duration || 0;
+  const subtitleFile = findBestSubtitleFile(subtitles) || findBestSubtitleFile(automatic_captions);
+  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+  const title = data.title || '';
+
+  if (data.fragments) {
+    return {
+      type: 'manifest',
+      cookies,
+      duration,
+      manifest: generateManifest(data),
+      subtitle_url: subtitleUrl,
+      title,
+    };
+  }
+
+  if (formats) {
+    const formatUrls = processFormats(formats);
+    return {
+      type: 'url',
+      cookies,
+      duration,
+      subtitle_url: subtitleUrl,
+      title,
+      audio_url,
+      ...formatUrls
+    };
+  }
+
+  throw 'no format urls';
+}
+
 module.exports.processPlaylist = (output) => {
   const outputJSON = JSON.parse(output)
   if (outputJSON["entries"]) {
@@ -176,4 +213,44 @@ function findBestSubtitleFile(list) {
     }))
     .filter((x) => x.subs)
     .sort((x, y) => x.priority > y.priority)[0];
+}
+
+function processFormats(formats) {
+  const formatUrls = {};
+
+  formats.forEach((format) => {
+    const { acodec, resolution, url } = format;
+
+    if (resolution === '3840x2160' && acodec !== 'none') {
+      formatUrls['url_4k'] = url;
+
+      if (formatUrls['url_4k_video']) {
+        delete formatUrls['url_4k_video'];
+      }
+    } else if (resolution === '3840x2160' && acodec === 'none' && !formatUrls['url_4k']) {
+      formatUrls['url_4k_video'] = url;
+    }
+
+    if (resolution === '1920x1080' && acodec !== 'none') {
+      formatUrls['url_hd'] = url;
+
+      if (formatUrls['url_hd_video']) {
+        delete formatUrls['url_hd_video'];
+      }
+    } else if (resolution === '1920x1080' && acodec === 'none' && !formatUrls['url_hd']) {
+      formatUrls['url_hd_video'] = url;
+    }
+
+    if (resolution === '1280x720' && acodec !== 'none') {
+      formatUrls['url_720p'] = url;
+
+      if (formatUrls['url_720p_video']) {
+        delete formatUrls['url_720p_video'];
+      }
+    } else if (resolution === '1280x720' && acodec === 'none' && !formatUrls['url_720p']) {
+      formatUrls['url_720p_video'] = url;
+    }
+  });
+
+  return formatUrls;
 }
