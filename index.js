@@ -154,40 +154,38 @@ module.exports.processV2 = (output, origin) => {
 
 module.exports.processV3 = (output, origin) => {
   const data = JSON.parse(output.toString().trim());
-  const { automatic_captions, formats, subtitles, url: audio_url } = data;
+  const { automatic_captions, formats, fragments, subtitles, url: audio } = data;
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
   const subtitleFile = findBestSubtitleFile(subtitles) || findBestSubtitleFile(automatic_captions);
   const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
   const title = data.title || '';
+  const processedData = processFormats(formats);
 
-  if (data.fragments) {
-    return {
-      type: 'manifest',
-      cookies,
-      duration,
-      manifest: generateManifest(data),
-      subtitle_url: subtitleUrl,
-      title,
-    };
+  Object.keys(processedData).forEach((format) => {
+    const formatInfo = processedData[format];
+    if (formatInfo.type === 'manifest') {
+      const manifest = generateManifest({ ...formatInfo, duration });
+      processedData[format] = { type: 'manifest', manifest };
+    }
+  });
+
+  if (fragments) {
+    const audioManifest = generateManifest(data);
+    processedData.audio = { type: 'manifest', manifest: audioManifest };
+  } else {
+    processedData.audio = { type: 'url', audio };
   }
 
-  if (formats) {
-    const formatUrls = processFormats(formats);
-    return {
-      type: 'url',
-      cookies,
-      duration,
-      subtitle_url: subtitleUrl,
-      title,
-      audio_url,
-      ...formatUrls
-    };
-  }
-
-  throw 'no format urls';
-}
+  return {
+    cookies,
+    duration,
+    subtitle_url: subtitleUrl,
+    title,
+    ...processedData
+  };
+};
 
 module.exports.processPlaylist = (output) => {
   const outputJSON = JSON.parse(output)
@@ -216,41 +214,47 @@ function findBestSubtitleFile(list) {
 }
 
 function processFormats(formats) {
-  const formatUrls = {};
+  const formatData = {};
 
   formats.forEach((format) => {
-    const { acodec, resolution, url } = format;
+    const { acodec, format_id, fragments, resolution, url, vcodec } = format;
+    const type = fragments ? 'manifest' : 'url';
+    const assignedData = type === 'manifest' ? { type, ...format } : { type, url };
+
+    if (format_id === 'source' || vcodec === 'av01' || vcodec === 'vp9') {
+      return;
+    }
 
     if (resolution === '3840x2160' && acodec !== 'none') {
-      formatUrls['url_4k'] = url;
+      formatData['combined_4k'] = assignedData;
 
-      if (formatUrls['url_4k_video']) {
-        delete formatUrls['url_4k_video'];
+      if (formatData['4k_video']) {
+        delete formatData['4k_video'];
       }
-    } else if (resolution === '3840x2160' && acodec === 'none' && !formatUrls['url_4k']) {
-      formatUrls['url_4k_video'] = url;
+    } else if (resolution === '3840x2160' && acodec === 'none' && !formatData['combined_4k']) {
+      formatData['4k_video'] = assignedData;
     }
 
     if (resolution === '1920x1080' && acodec !== 'none') {
-      formatUrls['url_hd'] = url;
+      formatData['combined_hd'] = assignedData;
 
-      if (formatUrls['url_hd_video']) {
-        delete formatUrls['url_hd_video'];
+      if (formatData['hd_video']) {
+        delete formatData['hd_video'];
       }
-    } else if (resolution === '1920x1080' && acodec === 'none' && !formatUrls['url_hd']) {
-      formatUrls['url_hd_video'] = url;
+    } else if (resolution === '1920x1080' && acodec === 'none' && !formatData['combined_hd']) {
+      formatData['hd_video'] = assignedData;
     }
 
     if (resolution === '1280x720' && acodec !== 'none') {
-      formatUrls['url_720p'] = url;
+      formatData['combined_720p'] = assignedData;
 
-      if (formatUrls['url_720p_video']) {
-        delete formatUrls['url_720p_video'];
+      if (formatData['720p_video']) {
+        delete formatData['720p_video'];
       }
-    } else if (resolution === '1280x720' && acodec === 'none' && !formatUrls['url_720p']) {
-      formatUrls['url_720p_video'] = url;
+    } else if (resolution === '1280x720' && acodec === 'none' && !formatData['combined_720p']) {
+      formatData['720p_video'] = assignedData;
     }
   });
 
-  return formatUrls;
+  return formatData;
 }
