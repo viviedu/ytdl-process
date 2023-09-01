@@ -41,6 +41,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
+        version = qs.get('version')
 
         ydl_opts = {
             'forcejson': True,
@@ -49,7 +50,7 @@ class Handler(BaseHTTPRequestHandler):
             'simulate': True
         }
         if url.path == '/process':
-            ydl_opts['format'] = 'bestaudio[format_id!=source][vcodec!*=av01][vcodec!*=vp9]'
+            ydl_opts['format'] = f'{"bestaudio" if version and version[0] == "3" else "(best[height = 1080][fps <= 30]/best[height <=? 720])"}[format_id!=source][vcodec!*=av01][vcodec!*=vp9]'
             ydl_opts['noplaylist'] = True
             ydl_opts['restrictfilenames'] = True
             ydl_opts['writeautomaticsub'] = True

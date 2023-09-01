@@ -17,12 +17,23 @@ const formatPreferences = [
   'best[height <=? 720]'
 ].join('/');
 
+const bestAudioPreference = 'bestaudio';
+
 module.exports.ARGUMENTS = [
   '--restrict-filenames',
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
   '-f', `(${formatPreferences})${commonProperties}`,
+  '-J'
+];
+
+module.exports.ARGUMENTS_MULTI_FORMAT = [
+  '--restrict-filenames',
+  '--write-sub',
+  '--write-auto-sub',
+  '--no-playlist',
+  '-f', `${bestAudioPreference}${commonProperties}`,
   '-J'
 ];
 
