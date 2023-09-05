@@ -17,8 +17,6 @@ const formatPreferences = [
   'best[height <=? 720]'
 ].join('/');
 
-const bestAudioPreference = 'bestaudio';
-
 module.exports.ARGUMENTS = [
   '--restrict-filenames',
   '--write-sub',
@@ -33,7 +31,7 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
-  '-f', `${bestAudioPreference}${commonProperties}`,
+  '-f', `bestaudio${commonProperties}`,
   '-J'
 ];
 
@@ -186,7 +184,7 @@ module.exports.processV3 = (output, origin) => {
     const audioManifest = generateManifest(data);
     processedData.audio = { type: 'manifest', manifest: audioManifest };
   } else {
-    processedData.audio = { type: 'url', audio };
+    processedData.audio = { type: 'url', url: audio };
   }
 
   return {
@@ -232,7 +230,7 @@ function processFormats(formats) {
     const type = fragments ? 'manifest' : 'url';
     const assignedData = type === 'manifest' ? { type, ...format } : { type, url };
 
-    if (format_id === 'source' || vcodec === 'av01' || vcodec === 'vp9') {
+    if (format_id === 'source' || !vcodec || !acodec || vcodec === 'av01' || vcodec.includes('vp9') || vcodec.includes('vp09')) {
       return;
     }
 
