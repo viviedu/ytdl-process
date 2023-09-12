@@ -177,6 +177,8 @@ module.exports.processV3 = (output, origin) => {
     if (formatInfo.type === 'manifest') {
       const manifest = generateManifest({ ...formatInfo, duration });
       processedData[format] = { type: 'manifest', manifest };
+    } else {
+      processedData[format] = { type: 'url', url: formatInfo.url }
     }
   });
 
@@ -223,47 +225,41 @@ function findBestSubtitleFile(list) {
 }
 
 function processFormats(formats) {
-  const formatData = {};
+  // Formats are first filtered by video codec. So vp9 and av01 are filtered out as they aren't supported.
+  // Formats filtered based on resolution and fps. Formats that are 1080p or higher and at the most 30fps or less than 1080p with any fps are retained.
+  const filteredFormats = formats.filter(({ format_id, fps, height, vcodec }) => filterFormatCodecs(format_id, vcodec) && filterFormatFps(fps, height))
+  .sort((prevFormat, nextFormat) => nextFormat.tbr - prevFormat.tbr);
 
-  formats.forEach((format) => {
-    const { acodec, format_id, fragments, resolution, url, vcodec } = format;
-    const type = fragments ? 'manifest' : 'url';
-    const assignedData = type === 'manifest' ? { type, ...format } : { type, url };
+  const selected4K = filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 2160);
+  const selected1080p = filteredFormats.find((format) => (format.height === 1080 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 1080);
+  const selectedLowQuality = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720) || filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720));
 
-    if (format_id === 'source' || !vcodec || !acodec || vcodec === 'av01' || vcodec.includes('vp9') || vcodec.includes('vp09')) {
-      return;
+  const selectedFormats = [selected4K, selected1080p, selectedLowQuality].filter(Boolean).reduce((acc, format) => {
+    const type = format.fragments ? 'manifest' : 'url';
+    const assignedData = { type, ...format, url: format.url };
+
+    if (format.height === 2160) {
+      acc[`${format.acodec !== 'none' ? 'combined_4k' : '4k_video'}`] = assignedData;
     }
 
-    if (resolution === '3840x2160' && acodec !== 'none') {
-      formatData['combined_4k'] = assignedData;
-
-      if (formatData['4k_video']) {
-        delete formatData['4k_video'];
-      }
-    } else if (resolution === '3840x2160' && acodec === 'none' && !formatData['combined_4k']) {
-      formatData['4k_video'] = assignedData;
+    if (format.height === 1080) {
+      acc[`${format.acodec !== 'none' ? 'combined_hd' : 'hd_video'}`] = assignedData;
     }
 
-    if (resolution === '1920x1080' && acodec !== 'none') {
-      formatData['combined_hd'] = assignedData;
-
-      if (formatData['hd_video']) {
-        delete formatData['hd_video'];
-      }
-    } else if (resolution === '1920x1080' && acodec === 'none' && !formatData['combined_hd']) {
-      formatData['hd_video'] = assignedData;
+    if (format.height <= 720) {
+      acc[`${format.acodec !== 'none' ? 'combined_720p' : '720p_video'}`] = assignedData;
     }
 
-    if (resolution === '1280x720' && acodec !== 'none') {
-      formatData['combined_720p'] = assignedData;
+    return acc;
+  }, {});
 
-      if (formatData['720p_video']) {
-        delete formatData['720p_video'];
-      }
-    } else if (resolution === '1280x720' && acodec === 'none' && !formatData['combined_720p']) {
-      formatData['720p_video'] = assignedData;
-    }
-  });
+  return selectedFormats;
+}
 
-  return formatData;
+function filterFormatCodecs(format_id, vcodec) {
+  return format_id !== 'source' && !format_id.startsWith('http') && vcodec && vcodec !== 'none' && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09');
+}
+
+function filterFormatFps(fps, height) {
+  return ((height >= 1080 && fps <= 30) || height < 1080);
 }
