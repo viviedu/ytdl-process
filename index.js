@@ -26,6 +26,15 @@ module.exports.ARGUMENTS = [
   '-J'
 ];
 
+module.exports.ARGUMENTS_MULTI_FORMAT = [
+  '--restrict-filenames',
+  '--write-sub',
+  '--write-auto-sub',
+  '--no-playlist',
+  '-f', `bestaudio${commonProperties}`,
+  '-J'
+];
+
 module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-J'];
 
 const timescale = 48000;
@@ -152,6 +161,43 @@ module.exports.processV2 = (output, origin) => {
   throw 'no url';
 };
 
+module.exports.processV3 = (output, origin) => {
+  const data = JSON.parse(output.toString().trim());
+  const { automatic_captions, formats, fragments, subtitles, url: audio } = data;
+
+  const cookies = data.http_headers && data.http_headers.Cookie || '';
+  const duration = data.duration || 0;
+  const subtitleFile = findBestSubtitleFile(subtitles) || findBestSubtitleFile(automatic_captions);
+  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+  const title = data.title || '';
+  const processedData = processFormats(formats);
+
+  Object.keys(processedData).forEach((format) => {
+    const formatInfo = processedData[format];
+    if (formatInfo.type === 'manifest') {
+      const manifest = generateManifest({ ...formatInfo, duration });
+      processedData[format] = { type: 'manifest', manifest };
+    } else {
+      processedData[format] = { type: 'url', url: formatInfo.url }
+    }
+  });
+
+  if (fragments) {
+    const audioManifest = generateManifest(data);
+    processedData.audio = { type: 'manifest', manifest: audioManifest };
+  } else {
+    processedData.audio = { type: 'url', url: audio };
+  }
+
+  return {
+    cookies,
+    duration,
+    subtitle_url: subtitleUrl,
+    title,
+    ...processedData
+  };
+};
+
 module.exports.processPlaylist = (output) => {
   const outputJSON = JSON.parse(output)
   if (outputJSON["entries"]) {
@@ -176,4 +222,44 @@ function findBestSubtitleFile(list) {
     }))
     .filter((x) => x.subs)
     .sort((x, y) => x.priority > y.priority)[0];
+}
+
+function processFormats(formats) {
+  // Formats are first filtered by video codec. So vp9 and av01 are filtered out as they aren't supported.
+  // Formats filtered based on resolution and fps. Formats that are 1080p or higher and at the most 30fps or less than 1080p with any fps are retained.
+  const filteredFormats = formats.filter(({ format_id, fps, height, vcodec }) => filterFormatCodecs(format_id, vcodec) && filterFormatFps(fps, height))
+  .sort((prevFormat, nextFormat) => nextFormat.tbr - prevFormat.tbr);
+
+  const selected4K = filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 2160);
+  const selected1080p = filteredFormats.find((format) => (format.height === 1080 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 1080);
+  const selectedLowQuality = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720) || filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720));
+
+  const selectedFormats = [selected4K, selected1080p, selectedLowQuality].filter(Boolean).reduce((acc, format) => {
+    const type = format.fragments ? 'manifest' : 'url';
+    const assignedData = { type, ...format, url: format.url };
+
+    if (format.height === 2160) {
+      acc[`${format.acodec !== 'none' ? 'combined_4k' : '4k_video'}`] = assignedData;
+    }
+
+    if (format.height === 1080) {
+      acc[`${format.acodec !== 'none' ? 'combined_hd' : 'hd_video'}`] = assignedData;
+    }
+
+    if (format.height <= 720) {
+      acc[`${format.acodec !== 'none' ? 'combined_720p' : '720p_video'}`] = assignedData;
+    }
+
+    return acc;
+  }, {});
+
+  return selectedFormats;
+}
+
+function filterFormatCodecs(format_id, vcodec) {
+  return format_id !== 'source' && !format_id.startsWith('http') && vcodec && vcodec !== 'none' && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09');
+}
+
+function filterFormatFps(fps, height) {
+  return ((height >= 1080 && fps <= 30) || height < 1080);
 }

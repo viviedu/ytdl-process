@@ -41,6 +41,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
+        version = qs.get('version', "2")
 
         ydl_opts = {
             'forcejson': True,
@@ -49,7 +50,10 @@ class Handler(BaseHTTPRequestHandler):
             'simulate': True
         }
         if url.path == '/process':
-            ydl_opts['format'] = '(best[height = 1080][fps <= 30]/best[height <=? 720])[format_id!=source][vcodec!*=av01][vcodec!*=vp9]'
+            # The format argument returns a result based on specific format arguments.
+            # Version 2 format arg returns a url for the best 1080p or 720p video.
+            # However for version 3, since all formats are considered, the best audio is requested in the case that audio is needed if a video only track is selected. 
+            ydl_opts['format'] = f'{"bestaudio" if version[0] == "3" else "(best[height = 1080][fps <= 30]/best[height <=? 720])"}[format_id!=source][vcodec!*=av01][vcodec!*=vp9]'
             ydl_opts['noplaylist'] = True
             ydl_opts['restrictfilenames'] = True
             ydl_opts['writeautomaticsub'] = True
