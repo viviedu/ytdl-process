@@ -52,10 +52,15 @@ const generateDurationString = (totalSeconds) => {
   return `PT${hoursString}${minutesString}${secondsString}`;
 }
 
-const generateManifest = (data) => {
+const generateManifest = (data, is_audio = false) => {
   const { duration, ext, format_id, fragments, fragment_base_url } = data;
   const durationString = generateDurationString(duration);
+  const type = is_audio ? 'audio' : 'video';
   let time = 0;
+
+  if (is_audio && ext === "m4a") {
+    ext = "mp4";  // m4a is audio only mp4. gstreamer needs 'mp4' here
+  }
 
   return (
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -68,10 +73,13 @@ const generateManifest = (data) => {
     >
       <BaseURL><![CDATA[${fragment_base_url || ''}]]></BaseURL>
       <Period start="PT0.000S" duration="${durationString}">
-        <AdaptationSet mimeType="video/${ext}">
+        <AdaptationSet mimeType="${type}/${ext}">
           <Representation id="${format_id}" bandwidth="4382360">
             <SegmentList timescale="${timescale}">
-              ${fragments.map((fragment) => `<SegmentURL media="${fragment.path}" />`).join('')}
+              ${fragments.map((fragment) => {
+                const path = fragment.path.replace('&', '&amp;');
+                return `<SegmentURL media="${path}" />`;
+              }).join('')}
               <SegmentTimeline> 
                 ${fragments.map((fragment) => {
                   const duration = (fragment.duration || 0.01) * timescale;
@@ -183,7 +191,7 @@ module.exports.processV3 = (output, origin) => {
   });
 
   if (fragments) {
-    const audioManifest = generateManifest(data);
+    const audioManifest = generateManifest(data, true);
     processedData.audio = { type: 'manifest', manifest: audioManifest };
   } else {
     processedData.audio = { type: 'url', url: audio };
@@ -217,7 +225,7 @@ function findBestSubtitleFile(list) {
     .filter((lang) => lang.toString().substring(0,2) === 'en')
     .map((lang) => ({
       lang,
-      subs: list[lang].find((x) => x.ext === 'vtt'),
+      subs: list[lang].find((x) => x.ext === 'vtt' && x.protocol !== 'm3u8_native'),
       priority: EN_LIST.indexOf(lang)
     }))
     .filter((x) => x.subs)
