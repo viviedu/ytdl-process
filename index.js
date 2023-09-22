@@ -31,7 +31,7 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
-  '-f', `bestaudio${commonProperties}`,
+  '-f', `bestaudio[acodec=opus]/bestaudio${commonProperties}`,
   '-J'
 ];
 
@@ -52,15 +52,12 @@ const generateDurationString = (totalSeconds) => {
   return `PT${hoursString}${minutesString}${secondsString}`;
 }
 
-const generateManifest = (data, is_audio = false) => {
+const generateManifest = (data, isAudio = false) => {
   const { duration, ext, format_id, fragments, fragment_base_url } = data;
   const durationString = generateDurationString(duration);
-  const type = is_audio ? 'audio' : 'video';
+  const type = isAudio ? 'audio' : 'video';
+  const realExt = (isAudio && ext === 'm4a') ? 'mp4' : ext; // m4a is audio only mp4. gstreamer needs 'mp4' here
   let time = 0;
-
-  if (is_audio && ext === "m4a") {
-    ext = "mp4";  // m4a is audio only mp4. gstreamer needs 'mp4' here
-  }
 
   return (
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -73,7 +70,7 @@ const generateManifest = (data, is_audio = false) => {
     >
       <BaseURL><![CDATA[${fragment_base_url || ''}]]></BaseURL>
       <Period start="PT0.000S" duration="${durationString}">
-        <AdaptationSet mimeType="${type}/${ext}">
+        <AdaptationSet mimeType="${type}/${realExt}">
           <Representation id="${format_id}" bandwidth="4382360">
             <SegmentList timescale="${timescale}">
               ${fragments.map((fragment) => {
@@ -186,7 +183,7 @@ module.exports.processV3 = (output, origin) => {
       const manifest = generateManifest({ ...formatInfo, duration });
       processedData[format] = { type: 'manifest', manifest };
     } else {
-      processedData[format] = { type: 'url', url: formatInfo.url }
+      processedData[format] = { type: 'url', url: formatInfo.url };
     }
   });
 
@@ -225,7 +222,7 @@ function findBestSubtitleFile(list) {
     .filter((lang) => lang.toString().substring(0,2) === 'en')
     .map((lang) => ({
       lang,
-      subs: list[lang].find((x) => x.ext === 'vtt' && x.protocol !== 'm3u8_native'),
+      subs: list[lang].find((x) => (x.ext === 'vtt' && x.protocol !== 'm3u8_native')),
       priority: EN_LIST.indexOf(lang)
     }))
     .filter((x) => x.subs)
@@ -233,9 +230,9 @@ function findBestSubtitleFile(list) {
 }
 
 function processFormats(formats) {
-  // Formats are first filtered by video codec. So vp9 and av01 are filtered out as they aren't supported.
+  // Formats are first filtered by video codec as well as protocol. So vp9 and av01 are filtered out as they aren't supported alongside tracks using the https protocol.
   // Formats filtered based on resolution and fps. Formats that are 1080p or higher and at the most 30fps or less than 1080p with any fps are retained.
-  const filteredFormats = formats.filter(({ format_id, fps, height, vcodec }) => filterFormatCodecs(format_id, vcodec) && filterFormatFps(fps, height))
+  const filteredFormats = formats.filter(({ acodec, format_id, fps, height, protocol, vcodec }) => filterFormatCodecs(acodec, format_id, protocol, vcodec) && filterFormatFps(fps, height))
   .sort((prevFormat, nextFormat) => nextFormat.tbr - prevFormat.tbr);
 
   const selected4K = filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 2160);
@@ -264,8 +261,8 @@ function processFormats(formats) {
   return selectedFormats;
 }
 
-function filterFormatCodecs(format_id, vcodec) {
-  return format_id !== 'source' && !format_id.startsWith('http') && vcodec && vcodec !== 'none' && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09');
+function filterFormatCodecs(acodec, format_id, protocol, vcodec) {
+  return format_id !== 'source' && !format_id.startsWith('http') && vcodec && vcodec !== 'none' && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09') && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
 }
 
 function filterFormatFps(fps, height) {

@@ -52,8 +52,9 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/process':
             # The format argument returns a result based on specific format arguments.
             # Version 2 format arg returns a url for the best 1080p or 720p video.
-            # However for version 3, since all formats are considered, the best audio is requested in the case that audio is needed if a video only track is selected. 
-            ydl_opts['format'] = f'{"bestaudio" if version[0] == "3" else "(best[height = 1080][fps <= 30]/best[height <=? 720])"}[format_id!=source][vcodec!*=av01][vcodec!*=vp9]'
+            # However for version 3, since all formats are considered, the best audio with opus audio codec is requested in the case that audio is needed if a video only track is selected.
+            # If no audio format with opus audio codec is available, then it defaults to just getting the best audio track.
+            ydl_opts['format'] = f'{"bestaudio[acodec=opus]/bestaudio" if version[0] == "3" else "(best[height = 1080][fps <= 30]/best[height <=? 720])"}[format_id!=source][vcodec!*=av01][vcodec!*=vp9]'
             ydl_opts['noplaylist'] = True
             ydl_opts['restrictfilenames'] = True
             ydl_opts['writeautomaticsub'] = True
