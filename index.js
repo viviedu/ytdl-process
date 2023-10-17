@@ -201,8 +201,8 @@ module.exports.processV3 = (output, origin) => {
     subtitle_url: subtitleUrl,
     title,
     thumbnail,
-    'audio': audio_track,
-    'video': video_tracks
+    audio: audio_track,
+    video: video_tracks
   };
 };
 
@@ -238,12 +238,11 @@ function processFormats(formats) {
   const filteredFormats = formats.filter(({ acodec, format_id, fps, height, protocol, vcodec }) => filterFormatCodecs(acodec, format_id, protocol, vcodec) && filterFormatFps(fps, height))
   .sort((prevFormat, nextFormat) => nextFormat.tbr - prevFormat.tbr);
 
-  // Select the best available option that has a max resolution of 4k, 1080p, and 720p
   const selected4K = filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 2160);
   const selected1080p = filteredFormats.find((format) => (format.height === 1080 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 1080);
-  const selected720p = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720) || filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720));
+  const selectedLowQuality = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720) || filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720));
 
-  return [selected4K, selected1080p, selected720p].filter(Boolean)
+  return [selected4K, selected1080p, selectedLowQuality].filter(Boolean);
 }
 
 function filterFormatCodecs(acodec, format_id, protocol, vcodec) {
