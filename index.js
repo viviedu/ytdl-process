@@ -176,22 +176,23 @@ module.exports.processV3 = (output, origin) => {
   const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
   const title = data.title || '';
   const processedData = processFormats(formats);
+  const thumbnail = data.thumbnail || '';
 
-  Object.keys(processedData).forEach((format) => {
-    const formatInfo = processedData[format];
-    if (formatInfo.type === 'manifest') {
+  const video_tracks = processedData.map((formatInfo) => {
+    if (formatInfo.fragments) {
       const manifest = generateManifest({ ...formatInfo, duration });
-      processedData[format] = { type: 'manifest', manifest };
+      return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none' };
     } else {
-      processedData[format] = { type: 'url', url: formatInfo.url };
+      return { type: 'url', url: formatInfo.url, height: formatInfo.height, combined: formatInfo.acodec !== 'none' };
     }
   });
 
+  let audio_track;
   if (fragments) {
     const audioManifest = generateManifest(data, true);
-    processedData.audio = { type: 'manifest', manifest: audioManifest };
+    audio_track = { type: 'manifest', manifest: audioManifest };
   } else {
-    processedData.audio = { type: 'url', url: audio };
+    audio_track = { type: 'url', url: audio };
   }
 
   return {
@@ -199,7 +200,9 @@ module.exports.processV3 = (output, origin) => {
     duration,
     subtitle_url: subtitleUrl,
     title,
-    ...processedData
+    thumbnail,
+    'audio': audio_track,
+    'video': video_tracks
   };
 };
 
@@ -235,30 +238,12 @@ function processFormats(formats) {
   const filteredFormats = formats.filter(({ acodec, format_id, fps, height, protocol, vcodec }) => filterFormatCodecs(acodec, format_id, protocol, vcodec) && filterFormatFps(fps, height))
   .sort((prevFormat, nextFormat) => nextFormat.tbr - prevFormat.tbr);
 
+  // Select the best available option that has a max resolution of 4k, 1080p, and 720p
   const selected4K = filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 2160);
   const selected1080p = filteredFormats.find((format) => (format.height === 1080 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 1080);
-  const selectedLowQuality = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720) || filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720));
+  const selected720p = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720) || filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720));
 
-  const selectedFormats = [selected4K, selected1080p, selectedLowQuality].filter(Boolean).reduce((acc, format) => {
-    const type = format.fragments ? 'manifest' : 'url';
-    const assignedData = { type, ...format, url: format.url };
-
-    if (format.height === 2160) {
-      acc[`${format.acodec !== 'none' ? 'combined_4k' : '4k_video'}`] = assignedData;
-    }
-
-    if (format.height === 1080) {
-      acc[`${format.acodec !== 'none' ? 'combined_hd' : 'hd_video'}`] = assignedData;
-    }
-
-    if (format.height <= 720) {
-      acc[`${format.acodec !== 'none' ? 'combined_720p' : '720p_video'}`] = assignedData;
-    }
-
-    return acc;
-  }, {});
-
-  return selectedFormats;
+  return [selected4K, selected1080p, selected720p].filter(Boolean)
 }
 
 function filterFormatCodecs(acodec, format_id, protocol, vcodec) {
