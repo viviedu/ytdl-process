@@ -225,7 +225,7 @@ function findBestSubtitleFile(list) {
     .filter((lang) => lang.toString().substring(0,2) === 'en')
     .map((lang) => ({
       lang,
-      subs: list[lang].find((x) => (x.ext === 'vtt' && x.protocol !== 'm3u8_native')),
+      subs: list[lang].find((x) => (x.ext === 'vtt' && x.protocol !== 'http_dash_segments' && x.protocol !== 'm3u8_native')),
       priority: EN_LIST.indexOf(lang)
     }))
     .filter((x) => x.subs)
