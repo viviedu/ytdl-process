@@ -77,7 +77,7 @@ const generateManifest = (data, isAudio = false) => {
                 const path = fragment.path.replace('&', '&amp;');
                 return `<SegmentURL media="${path}" />`;
               }).join('')}
-              <SegmentTimeline> 
+              <SegmentTimeline>
                 ${fragments.map((fragment) => {
                   const duration = (fragment.duration || 0.01) * timescale;
                   const segment = `<S t="${time}" d="${duration}"/>`;
@@ -215,7 +215,7 @@ module.exports.processPlaylist = (output) => {
 };
 
 module.exports.spawnPythonService = (additionalEnv = {}) => {
-  return spawn(join(__dirname, 'service.py'), [], { env: { ...process.env, ...additionalEnv } });
+  return spawn('python3', ['-u', join(__dirname, 'service.py')], { env: { ...process.env, ...additionalEnv } });
 }
 
 // private
