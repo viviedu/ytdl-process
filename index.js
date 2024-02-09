@@ -235,18 +235,28 @@ function findBestSubtitleFile(list) {
 function processFormats(formats) {
   // Formats are first filtered by video codec as well as protocol. So vp9 and av01 are filtered out as they aren't supported alongside tracks using the https protocol.
   // Formats filtered based on resolution and fps. Formats that are 1080p or higher and at the most 30fps or less than 1080p with any fps are retained.
-  const filteredFormats = formats.filter(({ acodec, format_id, fps, height, protocol, vcodec }) => filterFormatCodecs(acodec, format_id, protocol, vcodec) && filterFormatFps(fps, height))
-  .sort((prevFormat, nextFormat) => nextFormat.tbr - prevFormat.tbr);
+  const filteredFormats = 
+    formats.filter(({ format_id, fps, height, vcodec }) => filterFormatCodecs(format_id, vcodec) && filterFormatFps(fps, height))
+           .sort((prevFormat, nextFormat) => nextFormat.tbr - prevFormat.tbr);
 
-  const selected4K = filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 2160);
-  const selected1080p = filteredFormats.find((format) => (format.height === 1080 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 1080);
-  const selectedLowQuality = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720) || filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720));
+  const selected4K = 
+    filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none' && format.protocol.startsWith('http'))) ||
+    filteredFormats.find((format) => format.height === 2160 && format.protocol.startsWith('http')) || 
+    filteredFormats.find((format) => format.height === 2160);
+  const selected1080p = 
+    filteredFormats.find((format) => (format.height === 1080 && format.acodec !== 'none' && format.protocol.startsWith('http'))) ||
+    filteredFormats.find((format) => format.height === 1080 && format.protocol.startsWith('http')) ||
+    filteredFormats.find((format) => format.height === 1080);
+  const selectedLowQuality = 
+    filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none' && format.protocol.startsWith('http'))) ||
+    filteredFormats.find((format) => format.height === 720 && format.protocol.startsWith('http')) ||
+    filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720));
 
   return [selected4K, selected1080p, selectedLowQuality].filter(Boolean);
 }
 
-function filterFormatCodecs(acodec, format_id, protocol, vcodec) {
-  return format_id !== 'source' && !format_id.startsWith('http') && vcodec && vcodec !== 'none' && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09') && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
+function filterFormatCodecs(format_id, vcodec) {
+  return format_id !== 'source' && !format_id.startsWith('http') && vcodec && vcodec !== 'none' && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09');
 }
 
 function filterFormatFps(fps, height) {
