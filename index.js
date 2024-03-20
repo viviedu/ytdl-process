@@ -2,7 +2,7 @@ const { spawn } = require('child_process');
 const { join } = require('path');
 
 // constants
-const EN_LIST = ['en-US', 'en-GB', 'en', 'en-AU'];
+const EN_LIST = ['en-us', 'en-gb', 'en', 'en-au'];
 
 // public
 
@@ -166,13 +166,13 @@ module.exports.processV2 = (output, origin) => {
   throw 'no url';
 };
 
-module.exports.processV3 = (output, origin) => {
+module.exports.processV3 = (output, origin, locales = []) => {
   const data = JSON.parse(output.toString().trim());
   const { automatic_captions, formats, fragments, subtitles, url: audio } = data;
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
-  const subtitleFile = findBestSubtitleFile(subtitles) || findBestSubtitleFile(automatic_captions);
+  const subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
   const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
   const title = data.title || '';
   const processedData = processFormats(formats);
@@ -220,16 +220,20 @@ module.exports.spawnPythonService = (additionalEnv = {}) => {
 
 // private
 
-function findBestSubtitleFile(list) {
+function findBestSubtitleFile(list, locales = []) {
+  // favor locales but some subtitles just have the language code, zip it to keep the ordering
+  const localesAndLanguages = locales.map((locale) => [locale.toLowerCase(), locale.substring(0, 2)]).flat();
+  // unfound languages will have a priority of -1, so reversing the list here
+  const languages = [...localesAndLanguages, ...EN_LIST].reverse();
+  const uniqueLanguages = languages.filter((x, index) => languages.indexOf(x) === index);
   return Object.keys(list || {})
-    .filter((lang) => lang.toString().substring(0,2) === 'en')
     .map((lang) => ({
       lang,
       subs: list[lang].find((x) => (x.ext === 'vtt' && x.protocol !== 'http_dash_segments' && x.protocol !== 'm3u8_native')),
-      priority: EN_LIST.indexOf(lang)
+      priority: uniqueLanguages.indexOf(lang.toLowerCase())
     }))
     .filter((x) => x.subs)
-    .sort((x, y) => x.priority > y.priority)[0];
+    .sort((x, y) => y.priority - x.priority)[0];
 }
 
 function processFormats(formats) {
