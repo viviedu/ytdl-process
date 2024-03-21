@@ -168,7 +168,7 @@ module.exports.processV2 = (output, origin) => {
 
 module.exports.processV3 = (output, origin, locales = []) => {
   const data = JSON.parse(output.toString().trim());
-  const { automatic_captions, formats, fragments, subtitles, url: audio } = data;
+  const { automatic_captions, formats, fragments, subtitles, url: audio, format_id: audio_format } = data;
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
@@ -181,18 +181,18 @@ module.exports.processV3 = (output, origin, locales = []) => {
   const video_tracks = processedData.map((formatInfo) => {
     if (formatInfo.fragments) {
       const manifest = generateManifest({ ...formatInfo, duration });
-      return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none' };
+      return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id };
     } else {
-      return { type: 'url', url: formatInfo.url, height: formatInfo.height, combined: formatInfo.acodec !== 'none' };
+      return { type: 'url', url: formatInfo.url, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id };
     }
   });
 
   let audio_track;
   if (fragments) {
     const audioManifest = generateManifest(data, true);
-    audio_track = { type: 'manifest', manifest: audioManifest };
+    audio_track = { type: 'manifest', manifest: audioManifest, format_id: audio_format };
   } else {
-    audio_track = { type: 'url', url: audio };
+    audio_track = { type: 'url', url: audio, format_id: audio_format };
   }
 
   return {
