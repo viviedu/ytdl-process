@@ -31,7 +31,7 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
-  '-f', `bestaudio[acodec=opus]/bestaudio${commonProperties}`,
+  '-f', `bestaudio[acodec=opus]/bestaudio`,
   '-J'
 ];
 
@@ -168,7 +168,8 @@ module.exports.processV2 = (output, origin) => {
 
 module.exports.processV3 = (output, origin, locales = []) => {
   const data = JSON.parse(output.toString().trim());
-  const { automatic_captions, formats, fragments, subtitles, url: audio, format_id: audio_format } = data;
+  const { automatic_captions, formats, subtitles } = data;
+  const { fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate } = data;
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
@@ -187,12 +188,23 @@ module.exports.processV3 = (output, origin, locales = []) => {
     }
   });
 
-  let audio_track;
-  if (fragments) {
-    const audioManifest = generateManifest(data, true);
-    audio_track = { type: 'manifest', manifest: audioManifest, format_id: audio_format };
-  } else {
-    audio_track = { type: 'url', url: audio, format_id: audio_format };
+  let audio_track = null;
+  let silent_video = false;
+  if (audio_fragments || audio_url) {
+    if (audio_bitrate === 0 || (audio_bitrate && audio_bitrate <= 10)) {
+      // YouTube will return an empty audio track for silent videos.
+      // This track has an extremely low ABR (<10k) and our gstreamer pipeline fails to play it.
+      // If we get one of these, let the box know that this is a silent video.
+      // Typical ABR: mp3 is 96k-320k, spotify is 96k-160k, very bad audio can be as low as 30k)
+      //
+      // If abr exists (is not null or undefined) and is <= 10, then don't return this audio track
+      silent_video = true;
+    } else if (audio_fragments) {
+      const audioManifest = generateManifest(data, true);
+      audio_track = { type: 'manifest', manifest: audioManifest, format_id: audio_format };
+    } else {
+      audio_track = { type: 'url', url: audio_url, format_id: audio_format };
+    }
   }
 
   return {
@@ -202,7 +214,8 @@ module.exports.processV3 = (output, origin, locales = []) => {
     title,
     thumbnail,
     audio: audio_track,
-    video: video_tracks
+    video: video_tracks,
+    silent_video
   };
 };
 
@@ -237,8 +250,7 @@ function findBestSubtitleFile(list, locales = []) {
 }
 
 function processFormats(formats) {
-  // Formats are first filtered by video codec as well as protocol. So vp9 and av01 are filtered out as they aren't supported alongside tracks using the https protocol.
-  // Formats filtered based on resolution and fps. Formats that are 1080p or higher and at the most 30fps or less than 1080p with any fps are retained.
+  // Filter out tracks that are not suitable (see comments below)
   const filteredFormats = formats.filter(({ acodec, format_id, fps, height, protocol, vcodec }) => filterFormatCodecs(acodec, format_id, protocol, vcodec) && filterFormatFps(fps, height))
   .sort((prevFormat, nextFormat) => nextFormat.tbr - prevFormat.tbr);
 
@@ -250,7 +262,14 @@ function processFormats(formats) {
 }
 
 function filterFormatCodecs(acodec, format_id, protocol, vcodec) {
-  return format_id !== 'source' && !format_id.startsWith('http') && vcodec && vcodec !== 'none' && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09') && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
+  return format_id !== 'source' && !format_id.startsWith('http')
+    // ignore tracks with no video
+    && vcodec && vcodec !== 'none'
+    // boxes can't play vp9 or av01
+    && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09')
+    // In our gstreamer pipeline, seeking breaks for video only tracks that have protocol=https
+    // I couldn't figure out why. Therefore we take tracks with protocol=m3u8 or protocol=dash
+    && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
 }
 
 function filterFormatFps(fps, height) {
