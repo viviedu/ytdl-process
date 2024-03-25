@@ -191,8 +191,8 @@ module.exports.processV3 = (output, origin, locales = []) => {
   let audio_track = null;
   let silent_video = false;
   if (audio_fragments || audio_url) {
-    if (audio_bitrate == 0 || (audio_bitrate && audio_bitrate <= 10)) {
-      // Youtube will return an empty audio track for silent videos.
+    if (audio_bitrate === 0 || (audio_bitrate && audio_bitrate <= 10)) {
+      // YouTube will return an empty audio track for silent videos.
       // This track has an extremely low ABR (<10k) and our gstreamer pipeline fails to play it.
       // If we get one of these, let the box know that this is a silent video.
       // Typical ABR: mp3 is 96k-320k, spotify is 96k-160k, very bad audio can be as low as 30k)
@@ -263,13 +263,13 @@ function processFormats(formats) {
 
 function filterFormatCodecs(acodec, format_id, protocol, vcodec) {
   return format_id !== 'source' && !format_id.startsWith('http')
-         // ignore tracks with no video
-         && vcodec && vcodec !== 'none'
-         // boxes can't play vp9 or av01
-         && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09')
-         // In our gstreamer pipeline, seeking breaks for video only tracks that have protocol=https
-         // I couldn't figure out why. Therefore we take tracks with protocol=m3u8 or protocol=dash
-         && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
+    // ignore tracks with no video
+    && vcodec && vcodec !== 'none'
+    // boxes can't play vp9 or av01
+    && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09')
+    // In our gstreamer pipeline, seeking breaks for video only tracks that have protocol=https
+    // I couldn't figure out why. Therefore we take tracks with protocol=m3u8 or protocol=dash
+    && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
 }
 
 function filterFormatFps(fps, height) {
