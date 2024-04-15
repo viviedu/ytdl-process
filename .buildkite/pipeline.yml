@@ -1,0 +1,10 @@
+steps:
+  - label: ':test_tube: Unit Tests'
+    key: unit_tests
+    agents:
+      queue: v3
+    command: yarn test
+    plugins:
+      - docker-compose#v2.5.1:
+          config: .buildkite/docker-compose.buildkite.yml
+          run: dev

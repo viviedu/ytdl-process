@@ -1,0 +1,7 @@
+version: '3.3'
+
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: .buildkite/Dockerfile.dev

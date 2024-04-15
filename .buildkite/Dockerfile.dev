@@ -1,0 +1,16 @@
+# Newer versions of alpine restrict installation of packages using system Python
+# We'll need to refactor `ytdl-process` to use a venv if we want to upgrade alpine
+FROM node:18-alpine3.18@sha256:4bdb3f3105718f0742bc8d64bb4e36e8f955ebbee295325e40ae80bc8ef78833
+
+WORKDIR /workspace
+
+RUN apk --no-cache update && \
+    apk --no-cache upgrade && \
+    apk --no-cache add git
+
+COPY package.json yarn.lock ./
+
+RUN yarn install --frozen-lockfile --network-concurrency 1
+
+COPY index.js ./index.js
+COPY tests ./tests

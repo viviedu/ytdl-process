@@ -251,8 +251,8 @@ function findBestSubtitleFile(list, locales = []) {
 
 function processFormats(formats) {
   // Filter out tracks that are not suitable (see comments below)
-  const filteredFormats = formats.filter(({ acodec, format_id, fps, height, protocol, vcodec }) => filterFormatCodecs(acodec, format_id, protocol, vcodec) && filterFormatFps(fps, height))
-  .sort((prevFormat, nextFormat) => nextFormat.tbr - prevFormat.tbr);
+  const filteredFormats = formats.filter((format) => filterFormatCodecs(format) && filterFormatFps(format));
+  filteredFormats.sort(videoTrackSort)
 
   const selected4K = filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 2160);
   const selected1080p = filteredFormats.find((format) => (format.height === 1080 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 1080);
@@ -261,7 +261,44 @@ function processFormats(formats) {
   return [selected4K, selected1080p, selectedLowQuality].filter(Boolean);
 }
 
-function filterFormatCodecs(acodec, format_id, protocol, vcodec) {
+// Return > 0 if b is preferred
+// Return < 0 if a is preferred
+// Never return 1, we want track selection to be deterministic!
+function videoTrackSort(a, b) {
+  // Prefer tracks with higher resolution
+  if (a.height !== b.height) {
+    return b.height - a.height;
+  }
+
+  // Then prefer combined tracks over video-only tracks
+  if (a.acodec !== 'none' && b.acodec === 'none') {
+    return -1;
+  }
+
+  if (a.acodec === 'none' && b.acodec !== 'none') {
+    return 1;
+  }
+
+  // Then prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
+  if (a.protocol !== 'dash' && b.protocol === 'dash') {
+    return -1;
+  }
+  
+  if (a.protocol === 'dash' && b.protocol !== 'dash') {
+    return 1;
+  }
+
+  // Then prefer lower total bit rate
+  if (a.tbr != b.tbr) {
+    return a.tbr - b.tbr;
+  }
+
+  // Sort on format_id, which is guaranteed to be unique per track
+  return a.format_id < b.format_id ? -1 : 1;
+}
+
+function filterFormatCodecs(format) {
+  const { acodec, format_id, protocol, vcodec } = format;
   return format_id !== 'source' && !format_id.startsWith('http')
     // ignore tracks with no video
     && vcodec && vcodec !== 'none'
@@ -272,6 +309,13 @@ function filterFormatCodecs(acodec, format_id, protocol, vcodec) {
     && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
 }
 
-function filterFormatFps(fps, height) {
+function filterFormatFps(format) {
+  const { fps, height } = format;
   return ((height >= 1080 && fps <= 30) || height < 1080);
+}
+
+module.exports._private_testing = {
+  generateDurationString,
+  videoTrackSort,
+  filterFormatCodecs
 }
