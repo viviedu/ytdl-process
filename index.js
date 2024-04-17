@@ -236,9 +236,9 @@ module.exports.spawnPythonService = (additionalEnv = {}) => {
 function findBestSubtitleFile(list, locales = []) {
   // favor locales but some subtitles just have the language code, zip it to keep the ordering
   const localesAndLanguages = locales.map((locale) => [locale.toLowerCase(), locale.substring(0, 2)]).flat();
+  const languages = [...localesAndLanguages, ...EN_LIST];
   // unfound languages will have a priority of -1, so reversing the list here
-  const languages = [...localesAndLanguages, ...EN_LIST].reverse();
-  const uniqueLanguages = languages.filter((x, index) => languages.indexOf(x) === index);
+  const uniqueLanguages = languages.filter((x, index) => languages.indexOf(x) === index).reverse();
   return Object.keys(list || {})
     .map((lang) => ({
       lang,
