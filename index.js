@@ -256,9 +256,10 @@ function processFormats(formats) {
 
   const selected4K = filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 2160);
   const selected1080p = filteredFormats.find((format) => (format.height === 1080 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 1080);
-  const selectedLowQuality = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720) || filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720));
+  const selected720p = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720);
+  const selectedLowQuality =  filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720))
 
-  return [selected4K, selected1080p, selectedLowQuality].filter(Boolean);
+  return [selected4K, selected1080p, selected720p, selectedLowQuality].filter(Boolean);
 }
 
 // Return > 0 if b is preferred
