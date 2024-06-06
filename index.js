@@ -257,7 +257,7 @@ function processFormats(formats) {
   const selected4K = filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 2160);
   const selected1080p = filteredFormats.find((format) => (format.height === 1080 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 1080);
   const selected720p = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720);
-  const selectedLowQuality =  filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height <= 720))
+  const selectedLowQuality =  filteredFormats.find((format) => (format.height < 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height < 720))
 
   return [selected4K, selected1080p, selected720p, selectedLowQuality].filter(Boolean);
 }
