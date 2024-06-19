@@ -280,6 +280,19 @@ function videoTrackSort(a, b) {
     return 1;
   }
 
+  if (a.format_id.includes('akfire_interconnect') || a.format_id.includes('fastly_skyfire')) {
+    // Vimeo video!
+    // If one has 'sep' in the format_id and one does not, we take the one with 'sep' in its format_id
+    // VIVI-12238: video tracks that don't have '_sep' in its format_id are sometimes failing, reasons unknown
+    if (a.format_id.includes('_sep') && !b.format_id.includes('_sep')) {
+      return -1;
+    }
+    
+    if (!a.format_id.includes('_sep') && b.format_id.includes('_sep')) {
+      return 1;
+    }
+  }
+
   // Then prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
   if (a.protocol !== 'dash' && b.protocol === 'dash') {
     return -1;

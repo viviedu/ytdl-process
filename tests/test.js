@@ -16,32 +16,39 @@ test('generateDurationString generates correct strings', () => {
 
 // Ensure sorting criteria works as we expect
 test('videoTrackSort prefers higher resolutions', () => {
-    const a = { format_id: 'aaa', height: 720, acodec: 'opus', protocol: 'm3u8', tbr: 1000 };
-    const b = { format_id: 'bbb', height: 2180, acodec: 'none', protocol: 'dash', tbr: 3000 };
+    const a = { format_id: 'hls-akfire_interconnect_quic_sep-2519', height: 720, acodec: 'opus', protocol: 'm3u8', tbr: 1000 };
+    const b = { format_id: 'hls-akfire_interconnect_quic-2325', height: 2180, acodec: 'none', protocol: 'dash', tbr: 3000 };
     expect([a, b].sort(videoTrackSort)[0]).toBe(b);
     expect([b, a].sort(videoTrackSort)[0]).toBe(b);
 });
 
 test('videoTrackSort prefers combined video/audio tracks', () => {
-    const a = { format_id: 'aaa', height: 1080, acodec: 'opus', protocol: 'dash', tbr: 1000 };
-    const b = { format_id: 'bbb', height: 1080, acodec: 'none', protocol: 'm3u8', tbr: 3000 };
+    const a = { format_id: 'hls-akfire_interconnect_quic-2325', height: 1080, acodec: 'opus', protocol: 'dash', tbr: 1000 };
+    const b = { format_id: 'hls-akfire_interconnect_quic_sep-2519', height: 1080, acodec: 'none', protocol: 'm3u8', tbr: 3000 };
     expect([a, b].sort(videoTrackSort)[0]).toBe(a);
     expect([b, a].sort(videoTrackSort)[0]).toBe(a);
 
-    const c = { format_id: 'ccc', height: 1080, acodec: 'none', protocol: 'dash', tbr: 1000 };
-    const d = { format_id: 'ddd', height: 1080, acodec: 'opus', protocol: 'm3u8', tbr: 3000 };
+    const c = { format_id: 'hls-akfire_interconnect_quic-2325', height: 1080, acodec: 'none', protocol: 'dash', tbr: 1000 };
+    const d = { format_id: 'hls-akfire_interconnect_quic_sep-2519', height: 1080, acodec: 'opus', protocol: 'm3u8', tbr: 3000 };
     expect([c, d].sort(videoTrackSort)[0]).toBe(d);
     expect([d, c].sort(videoTrackSort)[0]).toBe(d);
 });
 
+test('videoTrackSort prefers vimeo tracks with "_sep" in its format_id', () => {
+    const a = { format_id: 'hls-akfire_interconnect_quic_sep-2519', height: 1080, acodec: 'none', protocol: 'dash', tbr: 1000 };
+    const b = { format_id: 'hls-akfire_interconnect_quic-2325', height: 1080, acodec: 'none', protocol: 'm3u8', tbr: 3000 };
+    expect([a, b].sort(videoTrackSort)[0]).toBe(a);
+    expect([b, a].sort(videoTrackSort)[0]).toBe(a);
+});
+
 test('videoTrackSort prefers url tracks over dash tracks', () => {
-    const a = { format_id: 'aaa', height: 1080, acodec: 'opus', protocol: 'dash', tbr: 1000 };
-    const b = { format_id: 'bbb', height: 1080, acodec: 'opus', protocol: 'm3u8', tbr: 3000 };
+    const a = { format_id: '22', height: 1080, acodec: 'opus', protocol: 'dash', tbr: 1000 };
+    const b = { format_id: '22', height: 1080, acodec: 'opus', protocol: 'm3u8', tbr: 3000 };
     expect([a, b].sort(videoTrackSort)[0]).toBe(b);
     expect([b, a].sort(videoTrackSort)[0]).toBe(b);
 
-    const c = { format_id: 'ccc', height: 1080, acodec: 'none', protocol: 'm3u8', tbr: 3000 };
-    const d = { format_id: 'ddd', height: 1080, acodec: 'none', protocol: 'dash', tbr: 3000 };
+    const c = { format_id: 'hls-akfire_interconnect_quic-2325', height: 1080, acodec: 'none', protocol: 'm3u8', tbr: 3000 };
+    const d = { format_id: 'hls-akfire_interconnect_quic-2325', height: 1080, acodec: 'none', protocol: 'dash', tbr: 3000 };
     expect([c, d].sort(videoTrackSort)[0]).toBe(c);
     expect([d, c].sort(videoTrackSort)[0]).toBe(c);
 });
