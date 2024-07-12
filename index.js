@@ -32,6 +32,7 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-auto-sub',
   '--no-playlist',
   '-f', `bestaudio[acodec=opus]/bestaudio`,
+  '--extractor-args', `youtube:player-client=ios,web,mediaconnect`,
   '-J'
 ];
 
@@ -252,14 +253,25 @@ function findBestSubtitleFile(list, locales = []) {
 function processFormats(formats) {
   // Filter out tracks that are not suitable (see comments below)
   const filteredFormats = formats.filter((format) => filterFormatCodecs(format) && filterFormatFps(format));
+
+  // Sort the tracks because .find will return the first match
   filteredFormats.sort(videoTrackSort)
 
-  const selected4K = filteredFormats.find((format) => (format.height === 2160 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 2160);
-  const selected1080p = filteredFormats.find((format) => (format.height === 1080 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 1080);
-  const selected720p = filteredFormats.find((format) => (format.height === 720 && format.acodec !== 'none')) || filteredFormats.find((format) => format.height === 720);
-  const selectedLowQuality =  filteredFormats.find((format) => (format.height < 720 && format.acodec !== 'none')) || filteredFormats.find((format) => (format.height < 720))
+  // For each quality level, return at most 1x combined track and 1x video only treack
+  const tracks = []
+  for (const quality of [2160, 1080, 720]) {
+    tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec === 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec !== 'none')));
+  }
 
-  return [selected4K, selected1080p, selected720p, selectedLowQuality].filter(Boolean);
+  // (temporary)
+  // Vivi Anywhere cannot (yet) play m3u8 or split tracks.
+  if (!tracks.find((format) => (format && (format.acodec !== 'none' && format.protocol === 'https')))) {
+    // None of the previously selected tracks are combined non-m3u8 tracks.... so find the best combined non-m3u8 track now
+    tracks.push(filteredFormats.find((format) => (format.acodec !== 'none' && format.protocol === 'https')));
+  }
+
+  return tracks.filter(Boolean);
 }
 
 // Return > 0 if b is preferred
