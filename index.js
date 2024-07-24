@@ -32,7 +32,7 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-auto-sub',
   '--no-playlist',
   '-f', `bestaudio[acodec=opus]/bestaudio`,
-  '--extractor-args', `youtube:player-client=ios,web,mediaconnect`,
+  '--extractor-args', `youtube:player-client=ios,web_creator,mediaconnect`,
   '-J'
 ];
 
@@ -257,7 +257,16 @@ function processFormats(formats) {
   // Sort the tracks because .find will return the first match
   filteredFormats.sort(videoTrackSort)
 
-  // For each quality level, return at most 1x combined track and 1x video only treack
+  // If you change track selection, then all permutations of the following should ideally be tested:
+  //    - signage, play content
+  //    - youtube livestream, youtube regular video
+  //    - real device (IMX or GF, either is fine), vivi anywhere
+  //
+  // So the above results in 8x permutations
+  // Also, check that:
+  //  - subtitles still work
+  //  - play/pausing and seeking in play content still works
+
   const tracks = []
   for (const quality of [2160, 1080, 720]) {
     tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec === 'none')));
