@@ -1,8 +1,10 @@
 const { _private_testing } = require('./../index');
 
-const filterFormatCodecs = _private_testing.filterFormatCodecs;
+const filterVideoFormatCodecs = _private_testing.filterVideoFormatCodecs;
+const filterAudioFormatCodecs = _private_testing.filterAudioFormatCodecs;
 const generateDurationString = _private_testing.generateDurationString;
 const videoTrackSort = _private_testing.videoTrackSort;
+const audioTrackSort = _private_testing.audioTrackSort;
 
 // Results must adhere to https://en.wikipedia.org/wiki/ISO_8601#Durations
 test('generateDurationString generates correct strings', () => {
@@ -72,42 +74,69 @@ test('videoTrackSort uses format_id as tiebreaker for identical tracks', () => {
     expect([b, a].sort(videoTrackSort)[0]).toBe(a);
 });
 
-test('filterFormatCodecs rejects bad format_ids', () => {
+test('filterVideoFormatCodecs rejects bad format_ids', () => {
     const bad1 = { format_id: 'source', vcodec: 'avc1', acodec: 'opus', protocol: 'https' };
-    expect(Boolean(filterFormatCodecs(bad1))).toBe(false);
+    expect(Boolean(filterVideoFormatCodecs(bad1))).toBe(false);
 
     const bad2 = { format_id: 'http-something-something', vcodec: 'avc1', acodec: 'opus', protocol: 'm3u8' };
-    expect(Boolean(filterFormatCodecs(bad2))).toBe(false);
+    expect(Boolean(filterVideoFormatCodecs(bad2))).toBe(false);
 });
 
-test('filterFormatCodecs rejects tracks with no video', () => {
+test('filterVideoFormatCodecs rejects tracks with no video', () => {
     const bad1 = { format_id: '22', vcodec: 'none', acodec: 'opus', protocol: 'https' };
-    expect(Boolean(filterFormatCodecs(bad1))).toBe(false);
+    expect(Boolean(filterVideoFormatCodecs(bad1))).toBe(false);
 
     const bad2 = { format_id: '520', acodec: 'opus', protocol: 'm3u8' };
-    expect(Boolean(filterFormatCodecs(bad2))).toBe(false);
+    expect(Boolean(filterVideoFormatCodecs(bad2))).toBe(false);
 });
 
-test('filterFormatCodecs rejects tracks with bad codecs', () => {
+test('filterVideoFormatCodecs rejects tracks with bad codecs', () => {
     const bad1 = { format_id: '22', vcodec: 'av01', acodec: 'opus', protocol: 'https' };
-    expect(Boolean(filterFormatCodecs(bad1))).toBe(false);
+    expect(Boolean(filterVideoFormatCodecs(bad1))).toBe(false);
 
     const bad2 = { format_id: '520', vcodec: 'vp09', acodec: 'opus', protocol: 'm3u8' };
-    expect(Boolean(filterFormatCodecs(bad2))).toBe(false);
+    expect(Boolean(filterVideoFormatCodecs(bad2))).toBe(false);
 
     const bad3 = { format_id: '520', vcodec: 'vp9', acodec: 'opus', protocol: 'm3u8' };
-    expect(Boolean(filterFormatCodecs(bad3))).toBe(false);
+    expect(Boolean(filterVideoFormatCodecs(bad3))).toBe(false);
 });
 
-test('filterFormatCodecs rejects video-only https tracks', () => {
+test('filterVideoFormatCodecs rejects video-only https tracks', () => {
     const bad1 = { format_id: '22', vcodec: 'avc1', acodec: 'none', protocol: 'https' };
-    expect(Boolean(filterFormatCodecs(bad1))).toBe(false);
+    expect(Boolean(filterVideoFormatCodecs(bad1))).toBe(false);
 });
 
-test('filterFormatCodecs allows good tracks', () => {
+test('filterVideoFormatCodecs allows good tracks', () => {
     const good1 = { format_id: '22', vcodec: 'avc1', acodec: 'opus', protocol: 'https' };
-    expect(Boolean(filterFormatCodecs(good1))).toBe(true);
+    expect(Boolean(filterVideoFormatCodecs(good1))).toBe(true);
 
     const good2 = { format_id: '520', vcodec: 'avc1', acodec: 'none', protocol: 'm3u8' };
-    expect(Boolean(filterFormatCodecs(good2))).toBe(true);
+    expect(Boolean(filterVideoFormatCodecs(good2))).toBe(true);
+});
+
+test('audioTrackSort prefers opus', () => {
+    const a = { format_id: '250', acodec: 'opus', protocol: 'https', abr: 49000 };
+    const b = { format_id: '140', acodec: undefined, protocol: 'm3u8_native', abr: 49000 };
+    expect([a, b].sort(audioTrackSort)[0]).toBe(a);
+    expect([b, a].sort(audioTrackSort)[0]).toBe(a);
+
+    const c = { format_id: '250', acodec: 'opus', protocol: 'https', abr: null };
+    const d = { format_id: '140', acodec: 'mp4a.4.3', protocol: 'https', abr: 49000 };
+    expect([c, d].sort(audioTrackSort)[0]).toBe(c);
+    expect([d, c].sort(audioTrackSort)[0]).toBe(c);
+});
+
+test('audioTrackSort prefers higher bitrates', () => {
+    const a = { format_id: '250', acodec: 'opus', protocol: 'https', abr: 64000 };
+    const b = { format_id: '250', acodec: 'opus', protocol: 'https', abr: 49000 };
+    expect([a, b].sort(audioTrackSort)[0]).toBe(a);
+    expect([b, a].sort(audioTrackSort)[0]).toBe(a);
+});
+
+test('filterAudioFormatCodecs does not allow https/mp4a tracks', () => {
+    const good = { format_id: '250', acodec: 'opus', protocol: 'https', abr: 49000 };
+    expect(Boolean(filterAudioFormatCodecs(good))).toBe(true);
+
+    const bad = { format_id: '250', acodec: 'mp4a.40.5', protocol: 'https', abr: 49000 };
+    expect(Boolean(filterAudioFormatCodecs(bad))).toBe(false);
 });

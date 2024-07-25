@@ -170,17 +170,17 @@ module.exports.processV2 = (output, origin) => {
 module.exports.processV3 = (output, origin, locales = []) => {
   const data = JSON.parse(output.toString().trim());
   const { automatic_captions, formats, subtitles } = data;
-  const { fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol } = data;
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
   const subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
   const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
   const title = data.title || '';
-  const processedData = processFormats(formats, !data.duration);
+  const processedVideoTracks = processVideoFormats(formats, !data.duration);
+  const audioTrack = processAudioFormats(formats);
   const thumbnail = data.thumbnail || '';
 
-  const video_tracks = processedData.map((formatInfo) => {
+  const video_tracks = processedVideoTracks.map((formatInfo) => {
     if (formatInfo.fragments) {
       const manifest = generateManifest({ ...formatInfo, duration });
       return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
@@ -191,20 +191,25 @@ module.exports.processV3 = (output, origin, locales = []) => {
 
   let audio_track = null;
   let silent_video = false;
-  if (audio_fragments || audio_url) {
-    if (audio_bitrate === 0 || (audio_bitrate && audio_bitrate <= 10)) {
-      // YouTube will return an empty audio track for silent videos.
-      // This track has an extremely low ABR (<10k) and our gstreamer pipeline fails to play it.
-      // If we get one of these, let the box know that this is a silent video.
-      // Typical ABR: mp3 is 96k-320k, spotify is 96k-160k, very bad audio can be as low as 30k)
-      //
-      // If abr exists (is not null or undefined) and is <= 10, then don't return this audio track
-      silent_video = true;
-    } else if (audio_fragments) {
-      const audioManifest = generateManifest(data, true);
-      audio_track = { type: 'manifest', manifest: audioManifest, format_id: audio_format, protocol: audio_protocol };
-    } else {
-      audio_track = { type: 'url', url: audio_url, format_id: audio_format, protocol: audio_protocol };
+
+  if (audioTrack != null) {
+    const { fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
+    const audio_language = language || 'unknown';
+    if (audio_fragments || audio_url) {
+      if (audio_bitrate === 0 || (audio_bitrate && audio_bitrate <= 10)) {
+        // YouTube will return an empty audio track for silent videos.
+        // This track has an extremely low ABR (<10k) and our gstreamer pipeline fails to play it.
+        // If we get one of these, let the box know that this is a silent video.
+        // Typical ABR: mp3 is 96k-320k, spotify is 96k-160k, very bad audio can be as low as 30k)
+        //
+        // If abr exists (is not null or undefined) and is <= 10, then don't return this audio track
+        silent_video = true;
+      } else if (audio_fragments) {
+        const audioManifest = generateManifest(data, true);
+        audio_track = { type: 'manifest', manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
+      } else {
+        audio_track = { type: 'url', url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
+      }
     }
   }
 
@@ -250,9 +255,9 @@ function findBestSubtitleFile(list, locales = []) {
     .sort((x, y) => y.priority - x.priority)[0];
 }
 
-function processFormats(formats, isStream) {
+function processVideoFormats(formats, isStream) {
   // Filter out tracks that are not suitable (see comments below)
-  const filteredFormats = formats.filter((format) => filterFormatCodecs(format) && filterFormatFps(format));
+  const filteredFormats = formats.filter((format) => filterVideoFormatCodecs(format) && filterVideoFormatFps(format));
 
   // Sort the tracks because .find will return the first match
   filteredFormats.sort(videoTrackSort)
@@ -350,7 +355,7 @@ function videoTrackSort(a, b) {
   return a.format_id < b.format_id ? -1 : 1;
 }
 
-function filterFormatCodecs(format) {
+function filterVideoFormatCodecs(format) {
   const { acodec, format_id, protocol, vcodec } = format;
   return format_id !== 'source' && !format_id.startsWith('http')
     // ignore tracks with no video
@@ -362,13 +367,80 @@ function filterFormatCodecs(format) {
     && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
 }
 
-function filterFormatFps(format) {
+function filterVideoFormatFps(format) {
   const { fps, height } = format;
   return ((height >= 1080 && fps <= 30) || height < 1080);
 }
 
+function processAudioFormats(formats) {
+  // Filter out tracks that are not suitable (see comments below)
+  const filteredFormats = formats.filter((format) => filterAudioFormatCodecs(format));
+  // Sort the tracks because .find will return the first match
+  filteredFormats.sort(audioTrackSort)
+
+  return filteredFormats.length ? filteredFormats[0] : null;
+}
+
+function filterAudioFormatCodecs(format) {
+  const { acodec, audio_ext, abr, protocol, language } = format;
+
+  // Audio tracks that are m3u8 have audio_ext set, but acodec and abr are undefined. For some reason yt-dlp can't determine acodec and abr in these situations
+  if (acodec && acodec === 'none') {
+    // not an audio track
+    return false;
+  }
+
+  if (!acodec && !audio_ext && !abr) {
+    // not an audio track
+    return false;
+  }
+
+  // Tracks with protocol=https and acodec=mp4a are no good, because our gstreamer split playing pipeline
+  // can't seek on these tracks. I don't know why, seek succeeds but nothing happens.
+  if (protocol.includes('https') && acodec && acodec.includes('mp4a')) {
+    return false;
+  }
+
+  // If we know the track is non-english, skip it
+  // Not all youtube videos have language information in their audio tracks. I think youtube is just rolling this out now
+  if (language && !language.startsWith('en')) {
+    return false;
+  }
+
+  return true;
+}
+
+// Return > 0 if b is preferred
+// Return < 0 if a is preferred
+// Never return 1, we want track selection to be deterministic!
+function audioTrackSort(a, b) {
+
+  // Prefer opus tracks
+  a_acodec = a.acodec ? a.acodec : 'unknown';
+  b_bcodec = b.acodec ? b.acodec : 'unknown';
+  if (a_acodec.includes('opus') && !b_bcodec.includes('opus')) {
+    return -1;
+  }
+  
+  if (!a_acodec.includes('opus') && b_bcodec.includes('opus')) {
+    return 1;
+  }
+
+  // prefer higher bit rate
+  a_abr = a.abr ? a.abr : 0;
+  b_abr = b.abr ? b.abr : 0;
+  if (a_abr != b_abr) {
+    return b_abr - a_abr;
+  }
+  
+  // Sort on format_id, which is guaranteed to be unique per track
+  return a.format_id < b.format_id ? -1 : 1;
+}
+
 module.exports._private_testing = {
   generateDurationString,
+  audioTrackSort,
   videoTrackSort,
-  filterFormatCodecs
+  filterVideoFormatCodecs,
+  filterAudioFormatCodecs
 }
