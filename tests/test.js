@@ -133,10 +133,30 @@ test('audioTrackSort prefers higher bitrates', () => {
     expect([b, a].sort(audioTrackSort)[0]).toBe(a);
 });
 
-test('filterAudioFormatCodecs does not allow https/mp4a tracks', () => {
-    const good = { format_id: '250', acodec: 'opus', protocol: 'https', abr: 49000 };
-    expect(Boolean(filterAudioFormatCodecs(good))).toBe(true);
+test('filterAudioFormatCodecs filters out https/mp4a tracks', () => {
+    const good1 = { format_id: '250', acodec: 'opus', protocol: 'https', abr: 64000 };
+    expect(Boolean(filterAudioFormatCodecs(good1))).toBe(true);
 
-    const bad = { format_id: '250', acodec: 'mp4a.40.5', protocol: 'https', abr: 49000 };
+    const good2 = { format_id: '250', acodec: 'mp4a.40.3', protocol: 'm3u8_native', abr: 64000 };
+    expect(Boolean(filterAudioFormatCodecs(good2))).toBe(true);
+
+    const good3 = { format_id: '250', acodec: undefined, protocol: 'm3u8_native', abr: 64000 };
+    expect(Boolean(filterAudioFormatCodecs(good3))).toBe(true);
+
+    const bad = { format_id: '250', acodec: 'mp4a.40.5', protocol: 'https', abr: 64000 };
+    expect(Boolean(filterAudioFormatCodecs(bad))).toBe(false);
+});
+
+test('filterAudioFormatCodecs filters out non-english tracks', () => {
+    const good1 = { format_id: '250', acodec: 'opus', protocol: 'https', language: undefined };
+    expect(Boolean(filterAudioFormatCodecs(good1))).toBe(true);
+
+    const good2 = { format_id: '250', acodec: 'opus', protocol: 'https', language: 'en-US' };
+    expect(Boolean(filterAudioFormatCodecs(good2))).toBe(true);
+    
+    const good3 = { format_id: '250', acodec: 'opus', protocol: 'https', language: 'en' };
+    expect(Boolean(filterAudioFormatCodecs(good3))).toBe(true);
+
+    const bad = { format_id: '250', acodec: 'mp4a.40.5', protocol: 'https', language: 'es' };
     expect(Boolean(filterAudioFormatCodecs(bad))).toBe(false);
 });
