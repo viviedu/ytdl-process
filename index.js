@@ -170,22 +170,22 @@ module.exports.processV2 = (output, origin) => {
 module.exports.processV3 = (output, origin, locales = []) => {
   const data = JSON.parse(output.toString().trim());
   const { automatic_captions, formats, subtitles } = data;
-  const { fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate } = data;
+  const { fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol } = data;
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
   const subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
   const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
   const title = data.title || '';
-  const processedData = processFormats(formats);
+  const processedData = processFormats(formats, !data.duration);
   const thumbnail = data.thumbnail || '';
 
   const video_tracks = processedData.map((formatInfo) => {
     if (formatInfo.fragments) {
       const manifest = generateManifest({ ...formatInfo, duration });
-      return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id };
+      return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
     } else {
-      return { type: 'url', url: formatInfo.url, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id };
+      return { type: 'url', url: formatInfo.url, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
     }
   });
 
@@ -202,9 +202,9 @@ module.exports.processV3 = (output, origin, locales = []) => {
       silent_video = true;
     } else if (audio_fragments) {
       const audioManifest = generateManifest(data, true);
-      audio_track = { type: 'manifest', manifest: audioManifest, format_id: audio_format };
+      audio_track = { type: 'manifest', manifest: audioManifest, format_id: audio_format, protocol: audio_protocol };
     } else {
-      audio_track = { type: 'url', url: audio_url, format_id: audio_format };
+      audio_track = { type: 'url', url: audio_url, format_id: audio_format, protocol: audio_protocol };
     }
   }
 
@@ -250,7 +250,7 @@ function findBestSubtitleFile(list, locales = []) {
     .sort((x, y) => y.priority - x.priority)[0];
 }
 
-function processFormats(formats) {
+function processFormats(formats, isStream) {
   // Filter out tracks that are not suitable (see comments below)
   const filteredFormats = formats.filter((format) => filterFormatCodecs(format) && filterFormatFps(format));
 
@@ -268,16 +268,34 @@ function processFormats(formats) {
   //  - play/pausing and seeking in play content still works
 
   const tracks = []
-  for (const quality of [2160, 1080, 720]) {
-    tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec === 'none')));
-    tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec !== 'none')));
-  }
 
-  // (temporary)
-  // Vivi Anywhere cannot (yet) play m3u8 or split tracks.
-  if (!tracks.find((format) => (format && (format.acodec !== 'none' && format.protocol === 'https')))) {
-    // None of the previously selected tracks are combined non-m3u8 tracks.... so find the best combined non-m3u8 track now
-    tracks.push(filteredFormats.find((format) => (format.acodec !== 'none' && format.protocol === 'https')));
+  if (isStream) {
+    // Livestreams will always have a combined m3u8 track, return this.
+    // (For a livestream, ALL its tracks are m3u8. This means if we decide to return split tracks for
+    // a livestream, it will be a m3u8 audio track and a m3u8 video track.)
+    for (const quality of [2160, 1080, 720]) {
+      tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec !== 'none')));
+    }
+  } else {
+    // Non-livestreams
+        
+    // Find the best split track for each quality level
+    for (const quality of [2160, 1080, 720]) {
+      tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec === 'none')));
+    }
+
+    // VA can only play non-m3u8 combined tracks. Find the best track that VA can play
+    const vaTrack = filteredFormats.find((format) => (format.height <= 1080 && format.acodec !== 'none' && format.protocol === 'https'));
+    
+    if (vaTrack) {
+      tracks.push(vaTrack);
+    } else {
+      // Too bad, there are no combined non-m3u8 tracks :(
+      // We will return the best combined m3u8 track for each quality level.
+      for (const quality of [2160, 1080, 720]) {
+        tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec !== 'none')));
+      }
+    }
   }
 
   return tracks.filter(Boolean);
