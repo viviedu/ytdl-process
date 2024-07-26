@@ -177,8 +177,13 @@ module.exports.processV3 = (output, origin, locales = []) => {
   const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
   const title = data.title || '';
   const processedVideoTracks = processVideoFormats(formats, !data.duration);
-  const audioTrack = processAudioFormats(formats);
   const thumbnail = data.thumbnail || '';
+
+  // Previously, we let yt-dlp auto pick a single audio track for us. It picks the best opus track. Not sure how it picks when there are no opus tracks.
+  // Now, we do our own selection. This lets us:
+  //  - pick a sensible fallback option when there are no opus tracks
+  //  - make a sensible selection when there are audio tracks of multiple languages available
+  const audioTrack = processAudioFormats(formats);
 
   const video_tracks = processedVideoTracks.map((formatInfo) => {
     if (formatInfo.fragments) {
@@ -401,12 +406,6 @@ function filterAudioFormatCodecs(format) {
     return false;
   }
 
-  // If we know the track is non-english, skip it
-  // Not all youtube videos have language information in their audio tracks. I think youtube is just rolling this out now
-  if (language && !language.startsWith('en')) {
-    return false;
-  }
-
   return true;
 }
 
@@ -414,6 +413,21 @@ function filterAudioFormatCodecs(format) {
 // Return < 0 if a is preferred
 // Never return 1, we want track selection to be deterministic!
 function audioTrackSort(a, b) {
+  // We can't filter out non-english tracks, because a teacher may be playing a non-english video (e.g. second language class).
+  // Right now, we de-prioritize non-english tracks. In future, we may want to decide based on the video's original language and/or
+  // the user's locale setting.
+  //
+  // This is good enough for now, because I think very few videos will have multiple language options. The ones I have found have
+  // all been videos where the user has uploaded a dubbed audio track.
+  a_non_english = a.language && !a.language.startsWith('en');
+  b_non_english = b.language && !b.language.startsWith('en');
+  if (a_non_english && !b_non_english) {
+    return 1;
+  }
+  
+  if (!a_non_english && b_non_english) {
+    return -1;
+  }
 
   // Prefer opus tracks
   a_acodec = a.acodec ? a.acodec : 'unknown';
