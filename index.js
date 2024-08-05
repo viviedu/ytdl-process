@@ -230,6 +230,65 @@ module.exports.processV3 = (output, origin, locales = []) => {
   };
 };
 
+module.exports.processV4 = (output, origin, locales = []) => {
+  const data = JSON.parse(output.toString().trim());
+  const { automatic_captions, formats, subtitles } = data;
+
+  const cookies = data.http_headers && data.http_headers.Cookie || '';
+  const duration = data.duration || 0;
+  const subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
+  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+  const title = data.title || '';
+  const processedVideoTracks = processVideoFormats(formats, !data.duration);
+  const thumbnail = data.thumbnail || '';
+
+  // Previously, we let yt-dlp auto pick a single audio track for us. It picks the best opus track. Not sure how it picks when there are no opus tracks.
+  // Now, we do our own selection. This lets us:
+  //  - pick a sensible fallback option when there are no opus tracks
+  //  - make a sensible selection when there are audio tracks of multiple languages available
+  const audioTracks = processAudioFormats(formats);
+
+  const video_tracks = processedVideoTracks.map((formatInfo) => {
+    if (formatInfo.fragments) {
+      const manifest = generateManifest({ ...formatInfo, duration });
+      return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
+    } else {
+      return { type: 'url', url: formatInfo.url, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
+    }
+  });
+
+  let silent_video = false;
+  const formatttedTracks = audioTracks.map((audioTrack) => {
+    const { fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
+    if (audio_bitrate === 0 || (audio_bitrate && audio_bitrate <= 10)) {
+      // YouTube will return an empty audio track for silent videos.
+      // This track has an extremely low ABR (<10k) and our gstreamer pipeline fails to play it.
+      // If we get one of these, let the box know that this is a silent video.
+      // Typical ABR: mp3 is 96k-320k, spotify is 96k-160k, very bad audio can be as low as 30k)
+      //
+      // If abr exists (is not null or undefined) and is <= 10, then don't return this audio track
+      silent_video = true;
+    } else if (audio_fragments) {
+      const audioManifest = generateManifest(data, true);
+      return { type: 'manifest', manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
+    } else {
+      return { type: 'url', url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
+    }
+  });
+  console.warn('audio tracks', formatttedTracks);
+
+  return {
+    cookies,
+    duration,
+    subtitle_url: subtitleUrl,
+    title,
+    thumbnail,
+    audio: formatttedTracks,
+    video: video_tracks,
+    silent_video
+  };
+};
+
 module.exports.processPlaylist = (output) => {
   const outputJSON = JSON.parse(output)
   if (outputJSON["entries"]) {
@@ -377,11 +436,15 @@ function filterVideoFormatFps(format) {
   return ((height >= 1080 && fps <= 30) || height < 1080);
 }
 
-function processAudioFormats(formats) {
+function processAudioFormats(formats, returnMultiple = false) {
   // Filter out tracks that are not suitable (see comments below)
   const filteredFormats = formats.filter((format) => filterAudioFormatCodecs(format));
   // Sort the tracks because .find will return the first match
   filteredFormats.sort(audioTrackSort)
+
+  if (returnMultiple) {
+    return filteredFormats;
+  }
 
   return filteredFormats.length ? filteredFormats[0] : null;
 }
