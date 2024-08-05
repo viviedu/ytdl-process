@@ -31,8 +31,8 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
-  '-f', `bestaudio[acodec=opus]/bestaudio`,
-  '--extractor-args', `youtube:player-client=ios,web_creator,mediaconnect`,
+  '-f', 'bestaudio[acodec=opus]/bestaudio',
+  '--extractor-args', 'youtube:player-client=ios,web_creator,mediaconnect',
   '-J'
 ];
 
@@ -51,7 +51,7 @@ const generateDurationString = (totalSeconds) => {
   const hoursString = hours > 0 ? `${hours}H` : '';
 
   return `PT${hoursString}${minutesString}${secondsString}`;
-}
+};
 
 const generateManifest = (data, isAudio = false) => {
   const { duration, ext, format_id, fragments, fragment_base_url } = data;
@@ -75,16 +75,16 @@ const generateManifest = (data, isAudio = false) => {
           <Representation id="${format_id}" bandwidth="4382360">
             <SegmentList timescale="${timescale}">
               ${fragments.map((fragment) => {
-                const path = fragment.path.replace('&', '&amp;');
-                return `<SegmentURL media="${path}" />`;
-              }).join('')}
+      const path = fragment.path.replace('&', '&amp;');
+      return `<SegmentURL media="${path}" />`;
+    }).join('')}
               <SegmentTimeline>
                 ${fragments.map((fragment) => {
-                  const duration = (fragment.duration || 0.01) * timescale;
-                  const segment = `<S t="${time}" d="${duration}"/>`;
-                  time += duration;
-                  return segment;
-                }).join('')}
+      const duration = (fragment.duration || 0.01) * timescale;
+      const segment = `<S t="${time}" d="${duration}"/>`;
+      time += duration;
+      return segment;
+    }).join('')}
               </SegmentTimeline>
             </SegmentList>
           </Representation>
@@ -233,7 +233,6 @@ module.exports.processV3 = (output, origin, locales = []) => {
 module.exports.processV4 = (output, origin, locales = []) => {
   const data = JSON.parse(output.toString().trim());
   const { automatic_captions, formats, subtitles } = data;
-
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
   const subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
@@ -246,9 +245,9 @@ module.exports.processV4 = (output, origin, locales = []) => {
   // Now, we do our own selection. This lets us:
   //  - pick a sensible fallback option when there are no opus tracks
   //  - make a sensible selection when there are audio tracks of multiple languages available
-  const audioTracks = processAudioFormats(formats);
+  const audioTracks = processAudioFormats(formats, true);
 
-  const video_tracks = processedVideoTracks.map((formatInfo) => {
+  const video_tracks = processedVideoTracks.map(formatInfo => {
     if (formatInfo.fragments) {
       const manifest = generateManifest({ ...formatInfo, duration });
       return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
@@ -258,8 +257,9 @@ module.exports.processV4 = (output, origin, locales = []) => {
   });
 
   let silent_video = false;
-  const formatttedTracks = audioTracks.map((audioTrack) => {
-    const { fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
+  const formatttedTracks = audioTracks.map(audioTrack => {
+    const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
+    const audio_language = language || 'unknown';
     if (audio_bitrate === 0 || (audio_bitrate && audio_bitrate <= 10)) {
       // YouTube will return an empty audio track for silent videos.
       // This track has an extremely low ABR (<10k) and our gstreamer pipeline fails to play it.
@@ -270,12 +270,11 @@ module.exports.processV4 = (output, origin, locales = []) => {
       silent_video = true;
     } else if (audio_fragments) {
       const audioManifest = generateManifest(data, true);
-      return { type: 'manifest', manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
+      return { type: 'manifest', acodec, manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
     } else {
-      return { type: 'url', url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
+      return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
     }
   });
-  console.warn('audio tracks', formatttedTracks);
 
   return {
     cookies,
@@ -290,16 +289,16 @@ module.exports.processV4 = (output, origin, locales = []) => {
 };
 
 module.exports.processPlaylist = (output) => {
-  const outputJSON = JSON.parse(output)
-  if (outputJSON["entries"]) {
-    return outputJSON["entries"].map((video) => `https://www.youtube.com/watch?v=${video.id}`);
+  const outputJSON = JSON.parse(output);
+  if (outputJSON['entries']) {
+    return outputJSON['entries'].map((video) => `https://www.youtube.com/watch?v=${video.id}`);
   }
   return [];
 };
 
 module.exports.spawnPythonService = (additionalEnv = {}) => {
   return spawn('python3', ['-u', join(__dirname, 'service.py')], { env: { ...process.env, ...additionalEnv } });
-}
+};
 
 // private
 
@@ -324,7 +323,7 @@ function processVideoFormats(formats, isStream) {
   const filteredFormats = formats.filter((format) => filterVideoFormatCodecs(format) && filterVideoFormatFps(format));
 
   // Sort the tracks because .find will return the first match
-  filteredFormats.sort(videoTrackSort)
+  filteredFormats.sort(videoTrackSort);
 
   // If you change track selection, then all permutations of the following should ideally be tested:
   //    - signage, play content
@@ -336,7 +335,7 @@ function processVideoFormats(formats, isStream) {
   //  - subtitles still work
   //  - play/pausing and seeking in play content still works
 
-  const tracks = []
+  const tracks = [];
 
   if (isStream) {
     // Livestreams will always have a combined m3u8 track, return this.
@@ -440,7 +439,7 @@ function processAudioFormats(formats, returnMultiple = false) {
   // Filter out tracks that are not suitable (see comments below)
   const filteredFormats = formats.filter((format) => filterAudioFormatCodecs(format));
   // Sort the tracks because .find will return the first match
-  filteredFormats.sort(audioTrackSort)
+  filteredFormats.sort(audioTrackSort);
 
   if (returnMultiple) {
     return filteredFormats;
@@ -450,7 +449,7 @@ function processAudioFormats(formats, returnMultiple = false) {
 }
 
 function filterAudioFormatCodecs(format) {
-  const { acodec, audio_ext, abr, protocol, language } = format;
+  const { acodec, audio_ext, abr, protocol, _language } = format;
 
   // Audio tracks that are m3u8 have audio_ext set, but acodec and abr are undefined. For some reason yt-dlp can't determine acodec and abr in these situations
   if (acodec && acodec === 'none') {
@@ -482,8 +481,8 @@ function audioTrackSort(a, b) {
   //
   // This is good enough for now, because I think very few videos will have multiple language options. The ones I have found have
   // all been videos where the user has uploaded a dubbed audio track.
-  a_non_english = a.language && !a.language.startsWith('en');
-  b_non_english = b.language && !b.language.startsWith('en');
+  const a_non_english = a.language && !a.language.startsWith('en');
+  const b_non_english = b.language && !b.language.startsWith('en');
   if (a_non_english && !b_non_english) {
     return 1;
   }
@@ -493,8 +492,8 @@ function audioTrackSort(a, b) {
   }
 
   // Prefer opus tracks
-  a_acodec = a.acodec ? a.acodec : 'unknown';
-  b_bcodec = b.acodec ? b.acodec : 'unknown';
+  const a_acodec = a.acodec ? a.acodec : 'unknown';
+  const b_bcodec = b.acodec ? b.acodec : 'unknown';
   if (a_acodec.includes('opus') && !b_bcodec.includes('opus')) {
     return -1;
   }
@@ -504,8 +503,8 @@ function audioTrackSort(a, b) {
   }
 
   // prefer higher bit rate
-  a_abr = a.abr ? a.abr : 0;
-  b_abr = b.abr ? b.abr : 0;
+  const a_abr = a.abr ? a.abr : 0;
+  const b_abr = b.abr ? b.abr : 0;
   if (a_abr != b_abr) {
     return b_abr - a_abr;
   }
@@ -520,4 +519,4 @@ module.exports._private_testing = {
   videoTrackSort,
   filterVideoFormatCodecs,
   filterAudioFormatCodecs
-}
+};
