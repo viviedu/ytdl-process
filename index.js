@@ -276,8 +276,8 @@ module.exports.processV4 = (output, origin, locales = []) => {
 
 module.exports.processPlaylist = (output) => {
   const outputJSON = JSON.parse(output);
-  if (outputJSON['entries']) {
-    return outputJSON['entries'].map((video) => `https://www.youtube.com/watch?v=${video.id}`);
+  if (outputJSON.entries) {
+    return outputJSON.entries.map((video) => `https://www.youtube.com/watch?v=${video.id}`);
   }
   return [];
 };
