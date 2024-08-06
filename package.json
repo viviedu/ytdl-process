@@ -4,9 +4,12 @@
   "description": "Shared module for our youtube-dl processing",
   "main": "index.js",
   "devDependencies": {
+    "eslint": "^8",
     "jest": "^29.7.0"
   },
   "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "test": "jest"
   }
 }
