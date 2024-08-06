@@ -179,10 +179,6 @@ module.exports.processV3 = (output, origin, locales = []) => {
   const processedVideoTracks = processVideoFormats(formats, !data.duration);
   const thumbnail = data.thumbnail || '';
 
-  // Previously, we let yt-dlp auto pick a single audio track for us. It picks the best opus track. Not sure how it picks when there are no opus tracks.
-  // Now, we do our own selection. This lets us:
-  //  - pick a sensible fallback option when there are no opus tracks
-  //  - make a sensible selection when there are audio tracks of multiple languages available
   const audioTrack = processAudioFormats(formats);
 
   const video_tracks = processedVideoTracks.map((formatInfo) => {
@@ -197,17 +193,15 @@ module.exports.processV3 = (output, origin, locales = []) => {
   let audio_track = null;
   let silent_video = false;
 
+  // Previously, we let yt-dlp auto pick a single audio track for us. It picks the best opus track. Not sure how it picks when there are no opus tracks.
+  // Now, we do our own selection. This lets us:
+  //  - pick a sensible fallback option when there are no opus tracks
+  //  - make a sensible selection when there are audio tracks of multiple languages available
   if (audioTrack != null) {
     const { fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
     const audio_language = language || 'unknown';
     if (audio_fragments || audio_url) {
-      if (audio_bitrate === 0 || (audio_bitrate && audio_bitrate <= 10)) {
-        // YouTube will return an empty audio track for silent videos.
-        // This track has an extremely low ABR (<10k) and our gstreamer pipeline fails to play it.
-        // If we get one of these, let the box know that this is a silent video.
-        // Typical ABR: mp3 is 96k-320k, spotify is 96k-160k, very bad audio can be as low as 30k)
-        //
-        // If abr exists (is not null or undefined) and is <= 10, then don't return this audio track
+      if (isSilentVideo(audio_bitrate)) {
         silent_video = true;
       } else if (audio_fragments) {
         const audioManifest = generateManifest(data, true);
@@ -241,10 +235,6 @@ module.exports.processV4 = (output, origin, locales = []) => {
   const processedVideoTracks = processVideoFormats(formats, !data.duration);
   const thumbnail = data.thumbnail || '';
 
-  // Previously, we let yt-dlp auto pick a single audio track for us. It picks the best opus track. Not sure how it picks when there are no opus tracks.
-  // Now, we do our own selection. This lets us:
-  //  - pick a sensible fallback option when there are no opus tracks
-  //  - make a sensible selection when there are audio tracks of multiple languages available
   const audioTracks = processAudioFormats(formats, true);
 
   const video_tracks = processedVideoTracks.map(formatInfo => {
@@ -256,17 +246,13 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
   });
 
+  // In V4 we just return all the eligible audio tracks and let the box pick
+  // This is so that gstreamer can pick a m3u8 track and Vivi Anywhere can pick a non-m3u8 track
   let silent_video = false;
   const formatttedTracks = audioTracks.map(audioTrack => {
     const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
     const audio_language = language || 'unknown';
-    if (audio_bitrate === 0 || (audio_bitrate && audio_bitrate <= 10)) {
-      // YouTube will return an empty audio track for silent videos.
-      // This track has an extremely low ABR (<10k) and our gstreamer pipeline fails to play it.
-      // If we get one of these, let the box know that this is a silent video.
-      // Typical ABR: mp3 is 96k-320k, spotify is 96k-160k, very bad audio can be as low as 30k)
-      //
-      // If abr exists (is not null or undefined) and is <= 10, then don't return this audio track
+    if (isSilentVideo(audio_bitrate)) {
       silent_video = true;
     } else if (audio_fragments) {
       const audioManifest = generateManifest(data, true);
@@ -316,6 +302,10 @@ function findBestSubtitleFile(list, locales = []) {
     }))
     .filter((x) => x.subs)
     .sort((x, y) => y.priority - x.priority)[0];
+}
+
+function isSilentVideo(audio_bitrate) {
+  return audio_bitrate === 0 || (audio_bitrate && audio_bitrate <= 10);
 }
 
 function processVideoFormats(formats, isStream) {
