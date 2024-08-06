@@ -276,8 +276,8 @@ module.exports.processV4 = (output, origin, locales = []) => {
 
 module.exports.processPlaylist = (output) => {
   const outputJSON = JSON.parse(output);
-  if (outputJSON['entries']) {
-    return outputJSON['entries'].map((video) => `https://www.youtube.com/watch?v=${video.id}`);
+  if (outputJSON.entries) {
+    return outputJSON.entries.map((video) => `https://www.youtube.com/watch?v=${video.id}`);
   }
   return [];
 };
@@ -305,7 +305,7 @@ function findBestSubtitleFile(list, locales = []) {
 }
 
 function isSilentVideo(audio_bitrate) {
-  return audio_bitrate === 0 || (audio_bitrate && audio_bitrate <= 10);
+  return audio_bitrate && audio_bitrate <= 10;
 }
 
 function processVideoFormats(formats, isStream) {

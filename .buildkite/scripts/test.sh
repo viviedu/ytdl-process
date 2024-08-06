@@ -5,4 +5,4 @@ echo "--- :lint-roller: lint"
 yarn lint
 
 echo "--- :jest: test"
-yarn lint
+yarn jest
