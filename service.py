@@ -5,7 +5,7 @@ from socketserver import ThreadingMixIn
 from sys import stderr
 from urllib.parse import parse_qs, urlparse
 from yt_dlp import YoutubeDL
-import json
+from yt_dlp.networking.impersonate import ImpersonateTarget
 
 class Handler(BaseHTTPRequestHandler):
     def debug(self, msg):
@@ -43,6 +43,9 @@ class Handler(BaseHTTPRequestHandler):
         qs = parse_qs(url.query)
         version = qs.get('version', "2")
 
+        impersonate_target_str = 'chrome-124'
+        impersonate_target = ImpersonateTarget.from_str(impersonate_target_str)
+
         ydl_opts = {
             'forcejson': True,
             'logger': self,
@@ -59,6 +62,9 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts['restrictfilenames'] = True
             ydl_opts['writeautomaticsub'] = True
             ydl_opts['writesubtitles'] = True
+
+
+            ydl_opts['impersonate'] = impersonate_target
 
             # by default, yt-dlp queries each url twice, once as an ios client and once as a web client. Youtube returns different tracks to
             # different clients. We add 'mediaconnect' to the list, because this causes youtube to return combined 720p/1080p m3u8 tracks which
