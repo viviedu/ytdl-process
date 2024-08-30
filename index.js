@@ -204,7 +204,7 @@ module.exports.processV3 = (output, origin, locales = []) => {
       if (isSilentVideo(audio_bitrate)) {
         silent_video = true;
       } else if (audio_fragments) {
-        const audioManifest = generateManifest(data, true);
+        const audioManifest = generateManifest({ ...audioTrack, duration }, true);
         audio_track = { type: 'manifest', manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
       } else {
         audio_track = { type: 'url', url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
@@ -248,19 +248,18 @@ module.exports.processV4 = (output, origin, locales = []) => {
 
   // In V4 we just return all the eligible audio tracks and let the box pick
   // This is so that gstreamer can pick a m3u8 track and Vivi Anywhere can pick a non-m3u8 track
-  let silent_video = false;
   const formatttedTracks = audioTracks.map(audioTrack => {
     const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
     const audio_language = language || 'unknown';
     if (isSilentVideo(audio_bitrate)) {
-      silent_video = true;
+      return;
     } else if (audio_fragments) {
-      const audioManifest = generateManifest(data, true);
+      const audioManifest = generateManifest({ ...audioTrack, duration }, true);
       return { type: 'manifest', acodec, manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
     } else {
       return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
     }
-  });
+  }).filter(Boolean);
 
   return {
     cookies,
@@ -270,7 +269,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
     thumbnail,
     audio: formatttedTracks,
     video: video_tracks,
-    silent_video
+    silent_video: formatttedTracks.length === 0
   };
 };
 
@@ -324,7 +323,6 @@ function processVideoFormats(formats, isStream) {
   // Also, check that:
   //  - subtitles still work
   //  - play/pausing and seeking in play content still works
-
   const tracks = [];
 
   if (isStream) {
@@ -337,22 +335,10 @@ function processVideoFormats(formats, isStream) {
   } else {
     // Non-livestreams
         
-    // Find the best split track for each quality level
+    // Find the best combined and split track for each quality level
     for (const quality of [2160, 1080, 720]) {
+      tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec !== 'none')));
       tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec === 'none')));
-    }
-
-    // VA can only play non-m3u8 combined tracks. Find the best track that VA can play
-    const vaTrack = filteredFormats.find((format) => (format.height <= 1080 && format.acodec !== 'none' && format.protocol === 'https'));
-    
-    if (vaTrack) {
-      tracks.push(vaTrack);
-    } else {
-      // Too bad, there are no combined non-m3u8 tracks :(
-      // We will return the best combined m3u8 track for each quality level.
-      for (const quality of [2160, 1080, 720]) {
-        tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec !== 'none')));
-      }
     }
   }
 
@@ -363,6 +349,14 @@ function processVideoFormats(formats, isStream) {
 // Return < 0 if a is preferred
 // Never return 1, we want track selection to be deterministic!
 function videoTrackSort(a, b) {
+  // Prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
+  if (!a.protocol.includes('dash') && b.protocol.includes('dash')) {
+    return -1;
+  }
+  if (a.protocol.includes('dash') && !b.protocol.includes('dash')) {
+    return 1;
+  }
+
   // Prefer tracks with higher resolution
   if (a.height !== b.height) {
     return b.height - a.height;
@@ -372,7 +366,6 @@ function videoTrackSort(a, b) {
   if (a.acodec !== 'none' && b.acodec === 'none') {
     return -1;
   }
-
   if (a.acodec === 'none' && b.acodec !== 'none') {
     return 1;
   }
@@ -384,19 +377,9 @@ function videoTrackSort(a, b) {
     if (a.format_id.includes('_sep') && !b.format_id.includes('_sep')) {
       return -1;
     }
-    
     if (!a.format_id.includes('_sep') && b.format_id.includes('_sep')) {
       return 1;
     }
-  }
-
-  // Then prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
-  if (a.protocol !== 'dash' && b.protocol === 'dash') {
-    return -1;
-  }
-  
-  if (a.protocol === 'dash' && b.protocol !== 'dash') {
-    return 1;
   }
 
   // Then prefer lower total bit rate
@@ -465,6 +448,14 @@ function filterAudioFormatCodecs(format) {
 // Return < 0 if a is preferred
 // Never return 1, we want track selection to be deterministic!
 function audioTrackSort(a, b) {
+  // Prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
+  if (!a.protocol.includes('dash') && b.protocol.includes('dash')) {
+    return -1;
+  }
+  if (a.protocol.includes('dash') && !b.protocol.includes('dash')) {
+    return 1;
+  }
+
   // We can't filter out non-english tracks, because a teacher may be playing a non-english video (e.g. second language class).
   // Right now, we de-prioritize non-english tracks. In future, we may want to decide based on the video's original language and/or
   // the user's locale setting.
