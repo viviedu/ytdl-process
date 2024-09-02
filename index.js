@@ -31,7 +31,6 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
-  '-f', 'bestaudio[acodec=opus]/bestaudio',
   '--extractor-args', 'youtube:player-client=ios,web_creator,mediaconnect',
   '-J'
 ];
@@ -248,8 +247,15 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
   });
 
-  // In V4 we just return all the eligible audio tracks and let the box pick
-  // This is so that gstreamer can pick a m3u8 track and Vivi Anywhere can pick a non-m3u8 track
+  // In V4 we just return all the eligible audio tracks and let the box pick.
+  //
+  // The three most common kinds of audio tracks:
+  //  1) proto=https acodec=opus: ok on Vivi Display, ok on physical devices
+  //  2) proto=https acodec=mp4a: ok on Vivi Display, cannot be played on physical devices
+  //  3) proto=m3u8 acodec=unknown: cannot be played on Vivi Display, ok on phyiscal devices
+  //
+  // Type 1 is the best. There are (very rarely) youtube videos that do not have this kind of track.
+  // Just return everything and let vivi-box pick, it knows whether it's on a Vivi Display or on a physical device
   const formattedTracks = audioTracks.map(audioTrack => {
     const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
     const audio_language = language || 'unknown';
@@ -331,17 +337,21 @@ function processVideoFormats(formats, isStream) {
     // Livestreams will always have a combined m3u8 track, return this.
     // (For a livestream, ALL its tracks are m3u8. This means if we decide to return split tracks for
     // a livestream, it will be a m3u8 audio track and a m3u8 video track.)
-    for (const quality of [2160, 1080, 720]) {
-      tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec !== 'none')));
-    }
+    tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec !== 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec !== 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
   } else {
     // Non-livestreams
         
     // Find the best combined and split track for each quality level
-    for (const quality of [2160, 1080, 720]) {
-      tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec !== 'none')));
-      tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec === 'none')));
-    }
+    tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec !== 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec === 'none')));
+
+    tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec !== 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec === 'none')));
+
+    tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec === 'none')));
   }
 
   return tracks.filter(Boolean);
@@ -351,17 +361,17 @@ function processVideoFormats(formats, isStream) {
 // Return < 0 if a is preferred
 // Never return 1, we want track selection to be deterministic!
 function videoTrackSort(a, b) {
+  // Prefer tracks with higher resolution
+  if (a.height !== b.height) {
+    return b.height - a.height;
+  }
+  
   // Prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
   if (!a.protocol.includes('dash') && b.protocol.includes('dash')) {
     return -1;
   }
   if (a.protocol.includes('dash') && !b.protocol.includes('dash')) {
     return 1;
-  }
-
-  // Prefer tracks with higher resolution
-  if (a.height !== b.height) {
-    return b.height - a.height;
   }
 
   // Then prefer combined tracks over video-only tracks
@@ -412,7 +422,7 @@ function filterVideoFormatFps(format) {
 
 function processAudioFormats(formats, returnMultiple = false) {
   // Filter out tracks that are not suitable (see comments below)
-  const filteredFormats = formats.filter((format) => filterAudioFormatCodecs(format));
+  const filteredFormats = formats.filter((format) => filterAudioFormatCodecs(format, returnMultiple));
   // Sort the tracks because .find will return the first match
   filteredFormats.sort(audioTrackSort);
 
@@ -423,8 +433,8 @@ function processAudioFormats(formats, returnMultiple = false) {
   return filteredFormats.length ? filteredFormats[0] : null;
 }
 
-function filterAudioFormatCodecs(format) {
-  const { acodec, audio_ext, abr, protocol, _language } = format;
+function filterAudioFormatCodecs(format, returnMultiple) {
+  const { acodec, audio_ext, abr, protocol, vcodec } = format;
 
   // Audio tracks that are m3u8 have audio_ext set, but acodec and abr are undefined. For some reason yt-dlp can't determine acodec and abr in these situations
   if (acodec && acodec === 'none') {
@@ -437,9 +447,15 @@ function filterAudioFormatCodecs(format) {
     return false;
   }
 
-  // Tracks with protocol=https and acodec=mp4a are no good, because our gstreamer split playing pipeline
-  // can't seek on these tracks. I don't know why, seek succeeds but nothing happens.
-  if (protocol.includes('https') && acodec && acodec.includes('mp4a')) {
+  // Don't return combined audio/video tracks here
+  // (audio tracks = audio only, video tracks = may or may not be a combined track)
+  if (vcodec && vcodec !== 'none') {
+    return false;
+  }
+
+  // Tracks with protocol=https and acodec=mp4a are no good on physical Vivi devices.
+  // If we are V4 (returnMultiple=true), return these and vivi-box code will know not to use it for a physical device.
+  if ((protocol.includes('https') && acodec && acodec.includes('mp4a')) && !returnMultiple) {
     return false;
   }
 

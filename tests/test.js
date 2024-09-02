@@ -19,7 +19,7 @@ test('generateDurationString generates correct strings', () => {
 // Ensure sorting criteria works as we expect
 test('videoTrackSort prefers higher resolutions', () => {
   const a = { format_id: 'hls-akfire_interconnect_quic_sep-2519', height: 720, acodec: 'opus', protocol: 'm3u8', tbr: 1000 };
-  const b = { format_id: 'hls-akfire_interconnect_quic-2325', height: 2180, acodec: 'none', protocol: 'm3u8', tbr: 3000 };
+  const b = { format_id: 'hls-akfire_interconnect_quic-2325', height: 2180, acodec: 'none', protocol: 'dash', tbr: 3000 };
   expect([a, b].sort(videoTrackSort)[0]).toBe(b);
   expect([b, a].sort(videoTrackSort)[0]).toBe(b);
 });
@@ -45,7 +45,7 @@ test('videoTrackSort prefers vimeo tracks with "_sep" in its format_id', () => {
 
 test('videoTrackSort prefers url tracks over dash tracks', () => {
   const a = { format_id: '22', height: 1080, acodec: 'opus', protocol: 'dash', tbr: 1000 };
-  const b = { format_id: '22', height: 720, acodec: 'opus', protocol: 'm3u8', tbr: 3000 };
+  const b = { format_id: '22', height: 1080, acodec: 'opus', protocol: 'm3u8', tbr: 3000 };
   expect([a, b].sort(videoTrackSort)[0]).toBe(b);
   expect([b, a].sort(videoTrackSort)[0]).toBe(b);
 
@@ -134,18 +134,20 @@ test('filterAudioFormatCodecs filters out non-audio tracks', () => {
   expect(Boolean(filterAudioFormatCodecs(audio3))).toBe(true);
 });
 
-test('filterAudioFormatCodecs filters out https/mp4a tracks', () => {
+test('filterAudioFormatCodecs filters out https/mp4a tracks for v3 (returnMultiple=false), but not for v4 (returnMultiple=true)', () => {
   const good1 = { format_id: '250', acodec: 'opus', protocol: 'https', abr: 64000 };
-  expect(Boolean(filterAudioFormatCodecs(good1))).toBe(true);
+  expect(Boolean(filterAudioFormatCodecs(good1, false))).toBe(true);
 
   const good2 = { format_id: '250', acodec: 'mp4a.40.3', protocol: 'm3u8_native', abr: 64000 };
-  expect(Boolean(filterAudioFormatCodecs(good2))).toBe(true);
+  expect(Boolean(filterAudioFormatCodecs(good2, false))).toBe(true);
 
   const good3 = { format_id: '250', protocol: 'm3u8_native', abr: 64000 };
-  expect(Boolean(filterAudioFormatCodecs(good3))).toBe(true);
+  expect(Boolean(filterAudioFormatCodecs(good3, false))).toBe(true);
 
   const bad = { format_id: '250', acodec: 'mp4a.40.5', protocol: 'https', abr: 64000 };
-  expect(Boolean(filterAudioFormatCodecs(bad))).toBe(false);
+  expect(Boolean(filterAudioFormatCodecs(bad, false))).toBe(false);
+  expect(Boolean(filterAudioFormatCodecs(bad, true))).toBe(true);
+  
 });
 
 test('audioTrackSort prefers opus', () => {
