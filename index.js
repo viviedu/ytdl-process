@@ -167,6 +167,7 @@ module.exports.processV2 = (output, origin) => {
   throw 'no url';
 };
 
+// processV3 returns a list of video tracks instead of a single one
 module.exports.processV3 = (output, origin, locales = []) => {
   const data = JSON.parse(output.toString().trim());
   const { automatic_captions, formats, subtitles } = data;
@@ -224,6 +225,7 @@ module.exports.processV3 = (output, origin, locales = []) => {
   };
 };
 
+// processV4 returns a list of video tracks and a list of audio tracks
 module.exports.processV4 = (output, origin, locales = []) => {
   const data = JSON.parse(output.toString().trim());
   const { automatic_captions, formats, subtitles } = data;
@@ -248,7 +250,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
 
   // In V4 we just return all the eligible audio tracks and let the box pick
   // This is so that gstreamer can pick a m3u8 track and Vivi Anywhere can pick a non-m3u8 track
-  const formatttedTracks = audioTracks.map(audioTrack => {
+  const formattedTracks = audioTracks.map(audioTrack => {
     const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
     const audio_language = language || 'unknown';
     if (isSilentVideo(audio_bitrate)) {
@@ -267,9 +269,9 @@ module.exports.processV4 = (output, origin, locales = []) => {
     subtitle_url: subtitleUrl,
     title,
     thumbnail,
-    audio: formatttedTracks,
+    audio: formattedTracks,
     video: video_tracks,
-    silent_video: formatttedTracks.length === 0
+    silent_video: formattedTracks.length === 0
   };
 };
 
