@@ -331,17 +331,21 @@ function processVideoFormats(formats, isStream) {
     // Livestreams will always have a combined m3u8 track, return this.
     // (For a livestream, ALL its tracks are m3u8. This means if we decide to return split tracks for
     // a livestream, it will be a m3u8 audio track and a m3u8 video track.)
-    for (const quality of [2160, 1080, 720]) {
-      tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec !== 'none')));
-    }
+    tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec !== 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec !== 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
   } else {
     // Non-livestreams
         
     // Find the best combined and split track for each quality level
-    for (const quality of [2160, 1080, 720]) {
-      tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec !== 'none')));
-      tracks.push(filteredFormats.find((format) => (format.height === quality && format.acodec === 'none')));
-    }
+    tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec !== 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec === 'none')));
+
+    tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec !== 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec === 'none')));
+
+    tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
+    tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec === 'none')));
   }
 
   return tracks.filter(Boolean);
@@ -351,17 +355,17 @@ function processVideoFormats(formats, isStream) {
 // Return < 0 if a is preferred
 // Never return 1, we want track selection to be deterministic!
 function videoTrackSort(a, b) {
+  // Prefer tracks with higher resolution
+  if (a.height !== b.height) {
+    return b.height - a.height;
+  }
+  
   // Prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
   if (!a.protocol.includes('dash') && b.protocol.includes('dash')) {
     return -1;
   }
   if (a.protocol.includes('dash') && !b.protocol.includes('dash')) {
     return 1;
-  }
-
-  // Prefer tracks with higher resolution
-  if (a.height !== b.height) {
-    return b.height - a.height;
   }
 
   // Then prefer combined tracks over video-only tracks
