@@ -167,6 +167,7 @@ module.exports.processV2 = (output, origin) => {
   throw 'no url';
 };
 
+// processV3 returns a list of video tracks instead of a single one
 module.exports.processV3 = (output, origin, locales = []) => {
   const data = JSON.parse(output.toString().trim());
   const { automatic_captions, formats, subtitles } = data;
@@ -224,6 +225,7 @@ module.exports.processV3 = (output, origin, locales = []) => {
   };
 };
 
+// processV4 returns a list of video tracks and a list of audio tracks
 module.exports.processV4 = (output, origin, locales = []) => {
   const data = JSON.parse(output.toString().trim());
   const { automatic_captions, formats, subtitles } = data;
