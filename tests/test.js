@@ -134,18 +134,20 @@ test('filterAudioFormatCodecs filters out non-audio tracks', () => {
   expect(Boolean(filterAudioFormatCodecs(audio3))).toBe(true);
 });
 
-test('filterAudioFormatCodecs filters out https/mp4a tracks', () => {
+test('filterAudioFormatCodecs filters out https/mp4a tracks for v3 (returnMultiple=false), but not for v4 (returnMultiple=true)', () => {
   const good1 = { format_id: '250', acodec: 'opus', protocol: 'https', abr: 64000 };
-  expect(Boolean(filterAudioFormatCodecs(good1))).toBe(true);
+  expect(Boolean(filterAudioFormatCodecs(good1, false))).toBe(true);
 
   const good2 = { format_id: '250', acodec: 'mp4a.40.3', protocol: 'm3u8_native', abr: 64000 };
-  expect(Boolean(filterAudioFormatCodecs(good2))).toBe(true);
+  expect(Boolean(filterAudioFormatCodecs(good2, false))).toBe(true);
 
   const good3 = { format_id: '250', protocol: 'm3u8_native', abr: 64000 };
-  expect(Boolean(filterAudioFormatCodecs(good3))).toBe(true);
+  expect(Boolean(filterAudioFormatCodecs(good3, false))).toBe(true);
 
   const bad = { format_id: '250', acodec: 'mp4a.40.5', protocol: 'https', abr: 64000 };
-  expect(Boolean(filterAudioFormatCodecs(bad))).toBe(false);
+  expect(Boolean(filterAudioFormatCodecs(bad, false))).toBe(false);
+  expect(Boolean(filterAudioFormatCodecs(bad, true))).toBe(true);
+  
 });
 
 test('audioTrackSort prefers opus', () => {
