@@ -5,7 +5,7 @@ from socketserver import ThreadingMixIn
 from sys import stderr
 from urllib.parse import parse_qs, urlparse
 from yt_dlp import YoutubeDL
-import json, os
+import json
 
 class Handler(BaseHTTPRequestHandler):
     def debug(self, msg):
@@ -41,6 +41,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
+        proxy_url = qs.get('proxy_url', '')
         version = qs.get('version', "2")
 
         ydl_opts = {
@@ -50,11 +51,9 @@ class Handler(BaseHTTPRequestHandler):
             'simulate': True
         }
 
-        proxy_url = os.environ.get('PROXY_URL')
-        if proxy_url and proxy_url != '':
-            ydl_opts['proxy'] = proxy_url
-
         if url.path == '/process':
+            if proxy_url[0] and proxy_url[0] != '':
+                ydl_opts['proxy'] = proxy_url[0]
 
             # Version 2 and 1: use a format specifier that asks for the best 1080p or 720p video.
             # Version 3 and 4: don't use this arg. javascript code will look through all available tracks and pick
