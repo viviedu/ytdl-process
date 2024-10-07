@@ -41,6 +41,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
+        proxy_url = qs.get('proxy_url')
         version = qs.get('version', "2")
 
         ydl_opts = {
@@ -49,7 +50,10 @@ class Handler(BaseHTTPRequestHandler):
             'quiet': True,
             'simulate': True
         }
+
         if url.path == '/process':
+            if proxy_url and proxy_url[0] != '':
+                ydl_opts['proxy'] = proxy_url[0]
 
             # Version 2 and 1: use a format specifier that asks for the best 1080p or 720p video.
             # Version 3 and 4: don't use this arg. javascript code will look through all available tracks and pick
