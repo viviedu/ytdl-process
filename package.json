@@ -13,5 +13,6 @@
     "lint:fix": "eslint . --fix",
     "test": "jest",
     "test-track-selection": "node tests/track_selection_test_script"
-  }
+  },
+  "types": "./ytdl-process.d.ts"
 }
