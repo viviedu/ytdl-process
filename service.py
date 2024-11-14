@@ -66,9 +66,9 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts['writesubtitles'] = True
 
             # by default, yt-dlp queries each url twice, once as an ios client and once as a web client. Youtube returns different tracks to
-            # different clients. We add 'mediaconnect' to the list, because this causes youtube to return combined 720p/1080p m3u8 tracks which
+            # different clients. We add 'web_safari' to the list, because this causes youtube to return combined 720p/1080p m3u8 tracks which
             # are handy to have. More clients = hitting youtube more times. This option is ignored by yt-dlp for URLs that are not youtube.
-            ydl_opts['extractor_args'] = {'youtube': {'player_client': ['ios', 'web_creator', 'mediaconnect']}}
+            ydl_opts['extractor_args'] = {'youtube': {'player_client': ['ios', 'web_creator', 'web_safari']}}
         elif url.path == '/process_playlist':
             ydl_opts['extract_flat'] = True
         else:
