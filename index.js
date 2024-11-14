@@ -31,7 +31,7 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
-  '--extractor-args', 'youtube:player-client=ios,web_creator,mediaconnect',
+  '--extractor-args', 'youtube:player-client=ios,web_creator,web_safari',
   '-J'
 ];
 
