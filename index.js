@@ -269,23 +269,27 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
   }).filter(Boolean);
 
-  const automaticCaptions = data.automatic_captions;
+  // const desiredLanguages = ["en", "fr", "ja"];
+  // const automaticCaptions = data.automatic_captions;
+  // const filteredCaptions = {};
+  // for (const [language, captions] of Object.entries(automaticCaptions)) {
+  //   if (!desiredLanguages.includes(language)) continue; // Skip if not in desired languages
   
-  const filteredCaptions = {}; 
+  //   const vttUrl = captions
+  //     .filter(caption => caption.ext === "vtt")
+  //     .map(caption => caption.url)[0];
+  
+  //   if (vttUrl) {
+  //     filteredCaptions[language] = vttUrl;
+  //   }
+  // }
 
-  const desiredLanguages = ["en", "fr", "ja"];
-  for (const [language, captions] of Object.entries(automaticCaptions)) {
-    if (!desiredLanguages.includes(language)) continue; // Skip if not in desired languages
-  
-    const vttUrl = captions
-      .filter(caption => caption.ext === "vtt")
-      .map(caption => caption.url)[0];
-  
-    if (vttUrl) {
-      filteredCaptions[language] = vttUrl;
-    }
+  const desiredLocales = ["en-GB", "fr-FR", "pt-PT"];
+  const subtitleMap = {};
+  for (const locale of desiredLocales) {
+    subtitleMap[locale] = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
   }
-
+  
   return {
     // cookies,
     // duration,
@@ -295,8 +299,8 @@ module.exports.processV4 = (output, origin, locales = []) => {
     // audio: formattedTracks,
     // video: video_tracks,
     // silent_video: formattedTracks.length === 0,
-    subtitles: filteredCaptions,
-    ryan: { "a": "a", "b": "b "}
+    subtitles: subtitleMap,
+    ryan: { "a": "a"}
   };
 };
 
