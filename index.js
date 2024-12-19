@@ -273,7 +273,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
     cookies,
     duration,
     subtitle_url: subtitleUrl,
-    title,
+    title: "RCHAN",
     thumbnail,
     audio: formattedTracks,
     video: video_tracks,
