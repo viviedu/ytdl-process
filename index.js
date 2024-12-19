@@ -3,6 +3,7 @@ const { join } = require('path');
 
 // constants
 const EN_LIST = ['en-us', 'en-gb', 'en', 'en-au'];
+const LOCALES = [['en-GB'], ['en-US'], ['fr-FR'], ['pt-PT'], ['de-DE']];
 
 // public
 
@@ -106,19 +107,19 @@ module.exports.process = (output, origin) => {
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
-  const subtitleFile = findBestSubtitleFile(subtitles) || findBestSubtitleFile(automatic_captions);
-  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+  const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
   const title = data.title || '';
   const thumbnail = data.thumbnail || '';
-
+  
   if (url) {
     return {
+      // subtitle_url: subtitleUrl,
       cookies,
       duration,
-      subtitle_url: subtitleUrl,
+      subtitles: subtitlesForAllLocales,
+      thumbnail,
       title,
-      url,
-      thumbnail
+      url
     };
   }
 
@@ -137,28 +138,29 @@ module.exports.processV2 = (output, origin) => {
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
-  const subtitleFile = findBestSubtitleFile(subtitles) || findBestSubtitleFile(automatic_captions);
-  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+  const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
   const title = data.title || '';
 
   if (data.fragments) {
     return {
-      type: 'manifest',
+      // subtitle_url: subtitleUrl,
       cookies,
       duration,
       manifest: generateManifest(data),
-      subtitle_url: subtitleUrl,
+      subtitles: subtitlesForAllLocales,
       title,
+      type: 'manifest'
     };
   }
 
   if (url) {
     return {
-      type: 'url',
+      // subtitle_url: subtitleUrl,
       cookies,
       duration,
-      subtitle_url: subtitleUrl,
+      subtitles: subtitlesForAllLocales,
       title,
+      type: 'url',
       url
     };
   }
@@ -173,8 +175,7 @@ module.exports.processV3 = (output, origin, locales = []) => {
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
-  const subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
-  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+  const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
   const title = data.title || '';
   const processedVideoTracks = processVideoFormats(formats, !data.duration);
   const thumbnail = data.thumbnail || '';
@@ -213,14 +214,15 @@ module.exports.processV3 = (output, origin, locales = []) => {
   }
 
   return {
+    // subtitle_url: subtitleUrl,
+    audio: audio_track,
     cookies,
     duration,
-    subtitle_url: subtitleUrl,
-    title,
+    silent_video,
+    subtitles: subtitlesForAllLocales,
     thumbnail,
-    audio: audio_track,
-    video: video_tracks,
-    silent_video
+    title,
+    video: video_tracks
   };
 };
 
@@ -230,8 +232,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
   const { automatic_captions, formats, subtitles } = data;
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
-  const subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
-  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+  const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
   const title = data.title || '';
   const processedVideoTracks = processVideoFormats(formats, !data.duration);
   const thumbnail = data.thumbnail || '';
@@ -268,16 +269,17 @@ module.exports.processV4 = (output, origin, locales = []) => {
       return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
     }
   }).filter(Boolean);
-
+  
   return {
+    // subtitle_url: subtitleUrl,
+    audio: formattedTracks,
     cookies,
     duration,
-    subtitle_url: subtitleUrl,
-    title,
+    silent_video: formattedTracks.length === 0,
+    subtitles: subtitlesForAllLocales,
     thumbnail,
-    audio: formattedTracks,
-    video: video_tracks,
-    silent_video: formattedTracks.length === 0
+    title,
+    video: video_tracks
   };
 };
 
@@ -510,6 +512,17 @@ function audioTrackSort(a, b) {
   
   // Sort on format_id, which is guaranteed to be unique per track
   return a.format_id < b.format_id ? -1 : 1;
+}
+
+function getSubtitlesForAllLocales(origin, subtitles, automatic_captions) {
+  const subtitlesForAllLocales = {};
+  var subtitleFile, subtitleUrl;
+  for (const locale of LOCALES) {
+    subtitleFile = findBestSubtitleFile(subtitles, locale) || findBestSubtitleFile(automatic_captions, locale);
+    subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+    subtitlesForAllLocales[locale[0]] = subtitleUrl;
+  }
+  return subtitlesForAllLocales;
 }
 
 module.exports._private_testing = {
