@@ -230,8 +230,8 @@ module.exports.processV4 = (output, origin, locales = []) => {
   const { automatic_captions, formats, subtitles } = data;
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
-  const subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
-  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+  // const subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
+  // const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
   const title = data.title || '';
   const processedVideoTracks = processVideoFormats(formats, !data.duration);
   const thumbnail = data.thumbnail || '';
@@ -286,6 +286,8 @@ module.exports.processV4 = (output, origin, locales = []) => {
 
   const desiredLocales = ["en-GB", "fr-FR", "pt-PT"];
   const subtitleMap = {};
+  var subtitleFile;
+  var subtitleUrl;
   for (const locale of desiredLocales) {
     subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
     subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
