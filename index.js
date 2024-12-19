@@ -287,7 +287,9 @@ module.exports.processV4 = (output, origin, locales = []) => {
   const desiredLocales = ["en-GB", "fr-FR", "pt-PT"];
   const subtitleMap = {};
   for (const locale of desiredLocales) {
-    subtitleMap[locale] = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
+    subtitleFile = findBestSubtitleFile(subtitles, locales) || findBestSubtitleFile(automatic_captions, locales);
+    subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+    subtitleMap[locale] = subtitleUrl;
   }
   
   return {
@@ -300,7 +302,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
     // video: video_tracks,
     // silent_video: formattedTracks.length === 0,
     subtitles: subtitleMap,
-    ryan: { "a": "a"}
+    ryan: { "a": "b"}
   };
 };
 
