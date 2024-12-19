@@ -269,6 +269,23 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
   }).filter(Boolean);
 
+  const automaticCaptions = data.automatic_captions;
+  
+  const filteredCaptions = {}; 
+
+  const desiredLanguages = ["en", "fr", "ja"];
+  for (const [language, captions] of Object.entries(automaticCaptions)) {
+    if (!desiredLanguages.includes(language)) continue; // Skip if not in desired languages
+  
+    const vttUrl = captions
+      .filter(caption => caption.ext === "vtt")
+      .map(caption => caption.url)[0];
+  
+    if (vttUrl) {
+      filteredCaptions[language] = vttUrl;
+    }
+  }
+
   return {
     // cookies,
     // duration,
@@ -277,7 +294,9 @@ module.exports.processV4 = (output, origin, locales = []) => {
     // thumbnail,
     // audio: formattedTracks,
     // video: video_tracks,
-    // silent_video: formattedTracks.length === 0
+    // silent_video: formattedTracks.length === 0,
+    subtitles: filteredCaptions,
+    ryan: { "a": "a", "b": "b "}
   };
 };
 
