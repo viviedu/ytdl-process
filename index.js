@@ -113,12 +113,12 @@ module.exports.process = (output, origin) => {
 
   if (url) {
     return {
-      cookies,
-      duration,
-      subtitle_url: subtitleUrl,
-      title,
-      url,
-      thumbnail
+      // cookies,
+      // duration,
+      // subtitle_url: subtitleUrl,
+      // title,
+      // url,
+      // thumbnail
     };
   }
 
@@ -154,12 +154,12 @@ module.exports.processV2 = (output, origin) => {
 
   if (url) {
     return {
-      type: 'url',
-      cookies,
-      duration,
-      subtitle_url: subtitleUrl,
-      title,
-      url
+      // type: 'url',
+      // cookies,
+      // duration,
+      // subtitle_url: subtitleUrl,
+      // title,
+      // url
     };
   }
 
@@ -213,14 +213,14 @@ module.exports.processV3 = (output, origin, locales = []) => {
   }
 
   return {
-    cookies,
-    duration,
-    subtitle_url: subtitleUrl,
-    title,
-    thumbnail,
-    audio: audio_track,
-    video: video_tracks,
-    silent_video
+    // cookies,
+    // duration,
+    // subtitle_url: subtitleUrl,
+    // title,
+    // thumbnail,
+    // audio: audio_track,
+    // video: video_tracks,
+    // silent_video
   };
 };
 
@@ -270,14 +270,14 @@ module.exports.processV4 = (output, origin, locales = []) => {
   }).filter(Boolean);
 
   return {
-    cookies,
-    duration,
-    subtitle_url: subtitleUrl,
-    title: "RCHAN",
-    thumbnail,
-    audio: formattedTracks,
-    video: video_tracks,
-    silent_video: formattedTracks.length === 0
+    // cookies,
+    // duration,
+    // subtitle_url: subtitleUrl,
+    // title,
+    // thumbnail,
+    // audio: formattedTracks,
+    // video: video_tracks,
+    // silent_video: formattedTracks.length === 0
   };
 };
 
