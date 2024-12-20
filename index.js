@@ -295,16 +295,15 @@ module.exports.processV4 = (output, origin, locales = []) => {
   }
   
   return {
-    // cookies,
-    // duration,
+    cookies,
+    duration,
     // subtitle_url: subtitleUrl,
-    // title,
-    // thumbnail,
-    // audio: formattedTracks,
-    // video: video_tracks,
-    // silent_video: formattedTracks.length === 0,
-    subtitles: subtitleMap,
-    ryan: { "a": "b"}
+    title,
+    thumbnail,
+    audio: formattedTracks,
+    video: video_tracks,
+    silent_video: formattedTracks.length === 0,
+    subtitles: subtitleMap
   };
 };
 
