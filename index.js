@@ -269,7 +269,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
   }).filter(Boolean);
 
-  const desiredLocales = [['en-GB'], ['en-US'] ['fr-FR'], ['pt-PT'], ['de-DE']];
+  const desiredLocales = [['en-GB'], ['en-US'], ['fr-FR'], ['pt-PT'], ['de-DE']];
   const subtitleMap = {};
   var subtitleFile, subtitleUrl;
   for (const locale of desiredLocales) {
