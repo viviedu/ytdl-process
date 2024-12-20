@@ -269,25 +269,9 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
   }).filter(Boolean);
 
-  // const desiredLanguages = ["en", "fr", "ja"];
-  // const automaticCaptions = data.automatic_captions;
-  // const filteredCaptions = {};
-  // for (const [language, captions] of Object.entries(automaticCaptions)) {
-  //   if (!desiredLanguages.includes(language)) continue; // Skip if not in desired languages
-  
-  //   const vttUrl = captions
-  //     .filter(caption => caption.ext === "vtt")
-  //     .map(caption => caption.url)[0];
-  
-  //   if (vttUrl) {
-  //     filteredCaptions[language] = vttUrl;
-  //   }
-  // }
-
-  const desiredLocales = [["en-GB"], ["fr-FR"], ["pt-PT"]];
+  const desiredLocales = [['en-GB'], ['en-US'] ['fr-FR'], ['pt-PT'], ['de-DE']];
   const subtitleMap = {};
-  var subtitleFile;
-  var subtitleUrl;
+  var subtitleFile, subtitleUrl;
   for (const locale of desiredLocales) {
     subtitleFile = findBestSubtitleFile(subtitles, locale) || findBestSubtitleFile(automatic_captions, locale);
     subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
