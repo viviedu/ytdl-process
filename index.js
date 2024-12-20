@@ -269,9 +269,10 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
   }).filter(Boolean);
 
-  const desiredLocales = [['en-GB'], ['en-US'] ['fr-FR'], ['pt-PT'], ['de-DE']];
+  const desiredLocales = [["en-GB"], ["fr-FR"], ["pt-PT"]];
   const subtitleMap = {};
-  var subtitleFile, subtitleUrl;
+  var subtitleFile;
+  var subtitleUrl;
   for (const locale of desiredLocales) {
     subtitleFile = findBestSubtitleFile(subtitles, locale) || findBestSubtitleFile(automatic_captions, locale);
     subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
