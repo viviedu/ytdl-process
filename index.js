@@ -107,13 +107,12 @@ module.exports.process = (output, origin) => {
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
-  const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
+  const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions, true);
   const title = data.title || '';
   const thumbnail = data.thumbnail || '';
-  
+
   if (url) {
     return {
-      // subtitle_url: subtitleUrl,
       cookies,
       duration,
       subtitles: subtitlesForAllLocales,
@@ -138,12 +137,11 @@ module.exports.processV2 = (output, origin) => {
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
-  const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
+  const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions, true);
   const title = data.title || '';
 
   if (data.fragments) {
     return {
-      // subtitle_url: subtitleUrl,
       cookies,
       duration,
       manifest: generateManifest(data),
@@ -155,7 +153,6 @@ module.exports.processV2 = (output, origin) => {
 
   if (url) {
     return {
-      // subtitle_url: subtitleUrl,
       cookies,
       duration,
       subtitles: subtitlesForAllLocales,
@@ -214,7 +211,6 @@ module.exports.processV3 = (output, origin, locales = []) => {
   }
 
   return {
-    // subtitle_url: subtitleUrl,
     audio: audio_track,
     cookies,
     duration,
@@ -269,9 +265,8 @@ module.exports.processV4 = (output, origin, locales = []) => {
       return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
     }
   }).filter(Boolean);
-  
+
   return {
-    // subtitle_url: subtitleUrl,
     audio: formattedTracks,
     cookies,
     duration,
@@ -514,11 +509,12 @@ function audioTrackSort(a, b) {
   return a.format_id < b.format_id ? -1 : 1;
 }
 
-function getSubtitlesForAllLocales(origin, subtitles, automatic_captions) {
+function getSubtitlesForAllLocales(origin, subtitles, automatic_captions, useEmptyLocale = false) {
   const subtitlesForAllLocales = {};
-  var subtitleFile, subtitleUrl;
+  var subtitleFile, subtitleUrl, subtitleLocale;
   for (const locale of LOCALES) {
-    subtitleFile = findBestSubtitleFile(subtitles, locale) || findBestSubtitleFile(automatic_captions, locale);
+    subtitleLocale = useEmptyLocale ? [] : locale;
+    subtitleFile = findBestSubtitleFile(subtitles, subtitleLocale) || findBestSubtitleFile(automatic_captions, subtitleLocale);
     subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
     subtitlesForAllLocales[locale[0]] = subtitleUrl;
   }
