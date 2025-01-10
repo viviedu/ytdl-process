@@ -511,11 +511,10 @@ function audioTrackSort(a, b) {
 
 function getSubtitlesForAllLocales(origin, subtitles, automatic_captions, useEmptyLocale = false) {
   const subtitlesForAllLocales = {};
-  var subtitleFile, subtitleUrl, subtitleLocale;
   for (const locale of LOCALES) {
-    subtitleLocale = useEmptyLocale ? [] : locale;
-    subtitleFile = findBestSubtitleFile(subtitles, subtitleLocale) || findBestSubtitleFile(automatic_captions, subtitleLocale);
-    subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
+    const subtitleLocale = useEmptyLocale ? [] : locale;
+    const subtitleFile = findBestSubtitleFile(subtitles, subtitleLocale) || findBestSubtitleFile(automatic_captions, subtitleLocale);
+    const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
     subtitlesForAllLocales[locale[0]] = subtitleUrl;
   }
   return subtitlesForAllLocales;
