@@ -107,7 +107,8 @@ module.exports.process = (output, origin) => {
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
-  const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions, true);
+  const subtitleFile = findBestSubtitleFile(subtitles) || findBestSubtitleFile(automatic_captions);
+  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
   const title = data.title || '';
   const thumbnail = data.thumbnail || '';
 
@@ -115,7 +116,7 @@ module.exports.process = (output, origin) => {
     return {
       cookies,
       duration,
-      subtitles: subtitlesForAllLocales,
+      subtitle_url: subtitleUrl,
       thumbnail,
       title,
       url
@@ -137,7 +138,8 @@ module.exports.processV2 = (output, origin) => {
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
-  const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions, true);
+  const subtitleFile = findBestSubtitleFile(subtitles) || findBestSubtitleFile(automatic_captions);
+  const subtitleUrl = subtitleFile ? `${origin}/ytdl/vtt?suburi=${encodeURIComponent(subtitleFile.subs.url)}` : '';
   const title = data.title || '';
 
   if (data.fragments) {
@@ -145,7 +147,7 @@ module.exports.processV2 = (output, origin) => {
       cookies,
       duration,
       manifest: generateManifest(data),
-      subtitles: subtitlesForAllLocales,
+      subtitle_url: subtitleUrl,
       title,
       type: 'manifest'
     };
