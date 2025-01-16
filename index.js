@@ -157,7 +157,7 @@ module.exports.processV2 = (output, origin) => {
     return {
       cookies,
       duration,
-      subtitles: subtitlesForAllLocales,
+      subtitle_url: subtitleUrl,
       title,
       type: 'url',
       url
