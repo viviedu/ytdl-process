@@ -358,8 +358,17 @@ function processVideoFormats(formats, isStream) {
 
 // Return > 0 if b is preferred
 // Return < 0 if a is preferred
-// Never return 1, we want track selection to be deterministic!
+// Never return 0, we want track selection to be deterministic!
 function videoTrackSort(a, b) {
+  // Prefer English audio
+  const englishAudioTag = 'xtags%3Dacont%3Doriginal:lang%3Den';
+  if (a.url?.includes(englishAudioTag)) {
+    return -1;
+  }
+  if (b.url?.includes(englishAudioTag)) {
+    return 1;
+  }
+
   // Prefer tracks with higher resolution
   if (a.height !== b.height) {
     return b.height - a.height;
