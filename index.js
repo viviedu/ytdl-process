@@ -362,10 +362,10 @@ function processVideoFormats(formats, isStream) {
 function videoTrackSort(a, b) {
   // Prefer English audio
   const englishAudioTag = 'xtags%3Dacont%3Doriginal:lang%3Den';
-  if (a.url?.includes(englishAudioTag)) {
+  if (a.url?.includes(englishAudioTag) && !b.url?.includes(englishAudioTag)) {
     return -1;
   }
-  if (b.url?.includes(englishAudioTag)) {
+  if (!a.url?.includes(englishAudioTag) && b.url?.includes(englishAudioTag)) {
     return 1;
   }
 
