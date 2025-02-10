@@ -361,7 +361,7 @@ function processVideoFormats(formats, isStream) {
 // Never return 0, we want track selection to be deterministic!
 function videoTrackSort(a, b) {
   // Prefer English audio
-  const englishAudioTag = 'xtags%3Dacont%3Doriginal:lang%3Den';
+  const englishAudioTag = 'original:lang%3Den';
   if (a.url?.includes(englishAudioTag) && !b.url?.includes(englishAudioTag)) {
     return -1;
   }
