@@ -334,35 +334,8 @@ function processVideoFormats(formats, isStream) {
   // Also, check that:
   //  - subtitles still work
   //  - play/pausing and seeking in play content still works
-  const tracks = [];
 
-  if (isStream) {
-    // Livestreams will always have a combined m3u8 track, return this.
-    // (For a livestream, ALL its tracks are m3u8. This means if we decide to return split tracks for
-    // a livestream, it will be a m3u8 audio track and a m3u8 video track.)
-    tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec !== 'none')));
-    tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec !== 'none')));
-    tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
-  } else {
-    // Non-livestreams
-        
-    tracks = filteredFormats;
-    // Find the best combined and split track for each quality level
-    // tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec !== 'none')));
-    // tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec === 'none')));
-
-    // tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec !== 'none')));
-    // tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec === 'none')));
-
-    // tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
-    // tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec === 'none')));
-
-    // tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 2160 && format.height > 1080)));
-    // tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 1080 && format.height > 720)));
-    // tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 720)));
-  }
-
-  return tracks.filter(Boolean);
+  return filteredFormats.filter(Boolean);
 }
 
 // Return > 0 if b is preferred
