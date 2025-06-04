@@ -39,9 +39,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
-        video_url = qs.get('url', [None])[0]  # Assuming the video URL is passed in the query
-        proxy_url = qs.get('proxy_url', [None])[0]
-        version = qs.get('version', ["4"])[0]
+        proxy_url = qs.get('proxy_url')
+        version = qs.get('version', "2")
 
         ydl_opts = {
             'forcejson': True,
@@ -54,24 +53,37 @@ class Handler(BaseHTTPRequestHandler):
             if proxy_url:
                 ydl_opts['proxy'] = proxy_url
 
-            # Initialize yt-dlp
-            ydl = YoutubeDL(ydl_opts)
+            # Version 2 and 1: use a format specifier that asks for the best 1080p or 720p video.
+            # Version 3 and 4: don't use this arg. javascript code will look through all available tracks and pick
+            if version[0] == "2" or version[0] == "1":
+                ydl_opts['format'] = "(best[height = 1080][fps <= 30]/best[height <=? 720])[format_id!=source][vcodec!*=av01][vcodec!*=vp9]"
 
-            # Attempt to extract video info
-            response = ""
-            try:
-                info = ydl.extract_info(qs['url'][0], download=False)
-                response = json.dumps(ydl.sanitize_info(info))
-            except Exception as ex:
-                self.fail(f"ydl exception: {repr(ex)}")
-                return
+            ydl_opts['noplaylist'] = True
+            ydl_opts['restrictfilenames'] = True
+            ydl_opts['writeautomaticsub'] = True
+            ydl_opts['writesubtitles'] = True
 
-            response_bytes = response.encode()
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            self.send_header('Content-Length', len(response_bytes))
-            self.end_headers()
-            self.wfile.write(response_bytes)
+        elif url.path == '/process_playlist':
+            ydl_opts['extract_flat'] = True
+        else:
+            self.fail("no matching path: {}".format(url.path))
+            return
+
+        ydl = YoutubeDL(ydl_opts)
+        response = ""
+        try:
+            info = ydl.extract_info(qs['url'][0], download=False)
+            response = json.dumps(ydl.sanitize_info(info))
+        except Exception as ex:
+            self.fail("ydl exception: {}".format(repr(ex)))
+            return
+
+        response_bytes = response.encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain')
+        self.send_header('Content-Length', len(response_bytes))
+        self.end_headers()
+        self.wfile.write(response_bytes)
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     pass
