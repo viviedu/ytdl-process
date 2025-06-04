@@ -246,6 +246,8 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
   });
 
+  console.log('ryan logging mapped video tracks', video_tracks);
+
   // In V4 we just return all the eligible audio tracks and let the box pick.
   //
   // The three most common kinds of audio tracks:
@@ -316,10 +318,12 @@ function isSilentVideo(audio_bitrate) {
 
 function processVideoFormats(formats, isStream) {
   // Filter out tracks that are not suitable (see comments below)
-  const filteredFormats = formats.filter((format) => filterVideoFormatCodecs(format) && filterVideoFormatFps(format));
+  const filteredFormats = formats.filter((format) => filterVideoFormatCodecs(format));
+
+  console.log('ryan logging processing formats', filteredFormats);
 
   // Sort the tracks because .find will return the first match
-  filteredFormats.sort(videoTrackSort);
+  // filteredFormats.sort(videoTrackSort);
 
   // If you change track selection, then all permutations of the following should ideally be tested:
   //    - signage, play content
@@ -342,19 +346,20 @@ function processVideoFormats(formats, isStream) {
   } else {
     // Non-livestreams
         
+    tracks = filteredFormats;
     // Find the best combined and split track for each quality level
-    tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec !== 'none')));
-    tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec === 'none')));
+    // tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec !== 'none')));
+    // tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec === 'none')));
 
-    tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec !== 'none')));
-    tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec === 'none')));
+    // tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec !== 'none')));
+    // tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec === 'none')));
 
-    tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
-    tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec === 'none')));
+    // tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
+    // tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec === 'none')));
 
-    tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 2160 && format.height > 1080)));
-    tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 1080 && format.height > 720)));
-    tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 720)));
+    // tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 2160 && format.height > 1080)));
+    // tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 1080 && format.height > 720)));
+    // tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 720)));
   }
 
   return tracks.filter(Boolean);
@@ -417,14 +422,15 @@ function videoTrackSort(a, b) {
 
 function filterVideoFormatCodecs(format) {
   const { acodec, format_id, protocol, vcodec } = format;
-  return format_id !== 'source' && !format_id.startsWith('http')
-    // ignore tracks with no video
-    && vcodec && vcodec !== 'none'
-    // boxes can't play vp9 or av01
-    && !vcodec.includes('av01') && !vcodec.includes('vp09')
-    // In our gstreamer pipeline, seeking breaks for video only tracks that have protocol=https
-    // I couldn't figure out why. Therefore we take tracks with protocol=m3u8 or protocol=dash
-    && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
+  return vcodec === 'vp9';
+  // return format_id !== 'source' && !format_id.startsWith('http')
+  //   // ignore tracks with no video
+  //   && vcodec && vcodec !== 'none'
+  //   // boxes can't play vp9 or av01
+  //   && !vcodec.includes('av01') && !vcodec.includes('vp09')
+  //   // In our gstreamer pipeline, seeking breaks for video only tracks that have protocol=https
+  //   // I couldn't figure out why. Therefore we take tracks with protocol=m3u8 or protocol=dash
+  //   && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
 }
 
 function filterVideoFormatFps(format) {
