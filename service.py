@@ -50,30 +50,28 @@ class Handler(BaseHTTPRequestHandler):
             'simulate': True
         }
 
-        if proxy_url:
-            ydl_opts['proxy'] = proxy_url
+        if url.path == '/process':
+            if proxy_url:
+                ydl_opts['proxy'] = proxy_url
 
-        # Initialize yt-dlp
-        ydl = YoutubeDL(ydl_opts)
+            # Initialize yt-dlp
+            ydl = YoutubeDL(ydl_opts)
 
-        # Attempt to extract video info
-        response = ""
-        try:
-            info = ydl.extract_info(video_url, download=False)
-            formats = info.get('formats', [])
-            
-            # Serialize the formats into a JSON response
-            response = json.dumps(formats, indent=2)
-        except Exception as ex:
-            self.fail(f"ydl exception: {repr(ex)}")
-            return
+            # Attempt to extract video info
+            response = ""
+            try:
+                info = ydl.extract_info(qs['url'][0], download=False)
+                response = json.dumps(ydl.sanitize_info(info))
+            except Exception as ex:
+                self.fail(f"ydl exception: {repr(ex)}")
+                return
 
-        response_bytes = response.encode()
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', len(response_bytes))
-        self.end_headers()
-        self.wfile.write(response_bytes)
+            response_bytes = response.encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', len(response_bytes))
+            self.end_headers()
+            self.wfile.write(response_bytes)
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     pass
