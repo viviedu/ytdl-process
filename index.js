@@ -232,7 +232,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
   const duration = data.duration || 0;
   const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
   const title = data.title || '';
-  const processedVideoTracks = processVideoFormats(formats, !data.duration);
+  const processedVideoTracks = formats;
   const thumbnail = data.thumbnail || '';
 
   const audioTracks = processAudioFormats(formats, true);
