@@ -232,12 +232,19 @@ module.exports.processV4 = (output, origin, locales = []) => {
   const duration = data.duration || 0;
   const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
   const title = data.title || '';
-  const processedVideoTracks = formats;
+  const processedVideoTracks = processVideoFormats(formats, !data.duration);
   const thumbnail = data.thumbnail || '';
 
-  const audioTracks = [];
+  const audioTracks = processAudioFormats(formats, true);
 
-  const video_tracks = [];
+  const video_tracks = processedVideoTracks.map(formatInfo => {
+    if (formatInfo.fragments) {
+      const manifest = generateManifest({ ...formatInfo, duration });
+      return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
+    } else {
+      return { type: 'url', url: formatInfo.url, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
+    }
+  });
 
   // In V4 we just return all the eligible audio tracks and let the box pick.
   //
@@ -248,28 +255,28 @@ module.exports.processV4 = (output, origin, locales = []) => {
   //
   // Type 1 is the best. There are (very rarely) youtube videos that do not have this kind of track.
   // Just return everything and let vivi-box pick, it knows whether it's on a Vivi Display or on a physical device
-  // const formattedTracks = audioTracks.map(audioTrack => {
-  //   const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
-  //   const audio_language = language || 'unknown';
-  //   if (isSilentVideo(audio_bitrate)) {
-  //     return;
-  //   } else if (audio_fragments) {
-  //     const audioManifest = generateManifest({ ...audioTrack, duration }, true);
-  //     return { type: 'manifest', acodec, manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
-  //   } else {
-  //     return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
-  //   }
-  // }).filter(Boolean);
+  const formattedTracks = audioTracks.map(audioTrack => {
+    const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
+    const audio_language = language || 'unknown';
+    if (isSilentVideo(audio_bitrate)) {
+      return;
+    } else if (audio_fragments) {
+      const audioManifest = generateManifest({ ...audioTrack, duration }, true);
+      return { type: 'manifest', acodec, manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
+    } else {
+      return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
+    }
+  }).filter(Boolean);
 
   return {
-    audio: [],
+    audio: formattedTracks,
     cookies,
     duration,
-    silent_video: false,
+    silent_video: formattedTracks.length === 0,
     subtitles: subtitlesForAllLocales,
     thumbnail,
     title,
-    video: []
+    video: video_tracks
   };
 };
 
