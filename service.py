@@ -39,6 +39,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
+        video_url = qs.get('url', [None])[0]
         proxy_url = qs.get('proxy_url')
         version = qs.get('version', "2")
 
@@ -49,30 +50,6 @@ class Handler(BaseHTTPRequestHandler):
             'simulate': True
         }
 
-        if url.path == '/process':
-            if proxy_url:
-                ydl_opts['proxy'] = proxy_url
-
-            # Version 2 and 1: use a format specifier that asks for the best 1080p or 720p video.
-            # Version 3 and 4: don't use this arg. javascript code will look through all available tracks and pick
-            if version[0] == "2" or version[0] == "1":
-                ydl_opts['format'] = "(best[height = 1080][fps <= 30]/best[height <=? 720])[format_id!=source][vcodec!*=av01][vcodec!*=vp9]"
-
-            # ydl_opts['noplaylist'] = True
-            # ydl_opts['restrictfilenames'] = True
-            # ydl_opts['writeautomaticsub'] = True
-            # ydl_opts['writesubtitles'] = True
-
-            # # by default, yt-dlp queries each url twice, once as an ios client and once as a web client. Youtube returns different tracks to
-            # # different clients. We add 'web_safari' to the list, because this causes youtube to return combined 720p/1080p m3u8 tracks which
-            # # are handy to have. More clients = hitting youtube more times. This option is ignored by yt-dlp for URLs that are not youtube.
-            # ydl_opts['extractor_args'] = {'youtube': {'player_client': ['ios', 'web_creator', 'web_safari']}}
-        elif url.path == '/process_playlist':
-            ydl_opts['extract_flat'] = True
-        else:
-            self.fail("no matching path: {}".format(url.path))
-            return
-
         ydl = YoutubeDL(ydl_opts)
         response = ""
         try:
@@ -81,6 +58,39 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as ex:
             self.fail("ydl exception: {}".format(repr(ex)))
             return
+
+        # if url.path == '/process':
+        #     if proxy_url:
+        #         ydl_opts['proxy'] = proxy_url
+
+        #     # Version 2 and 1: use a format specifier that asks for the best 1080p or 720p video.
+        #     # Version 3 and 4: don't use this arg. javascript code will look through all available tracks and pick
+        #     if version[0] == "2" or version[0] == "1":
+        #         ydl_opts['format'] = "(best[height = 1080][fps <= 30]/best[height <=? 720])[format_id!=source][vcodec!*=av01][vcodec!*=vp9]"
+
+        #     # ydl_opts['noplaylist'] = True
+        #     # ydl_opts['restrictfilenames'] = True
+        #     # ydl_opts['writeautomaticsub'] = True
+        #     # ydl_opts['writesubtitles'] = True
+
+        #     # # by default, yt-dlp queries each url twice, once as an ios client and once as a web client. Youtube returns different tracks to
+        #     # # different clients. We add 'web_safari' to the list, because this causes youtube to return combined 720p/1080p m3u8 tracks which
+        #     # # are handy to have. More clients = hitting youtube more times. This option is ignored by yt-dlp for URLs that are not youtube.
+        #     # ydl_opts['extractor_args'] = {'youtube': {'player_client': ['ios', 'web_creator', 'web_safari']}}
+        # elif url.path == '/process_playlist':
+        #     ydl_opts['extract_flat'] = True
+        # else:
+        #     self.fail("no matching path: {}".format(url.path))
+        #     return
+
+        # ydl = YoutubeDL(ydl_opts)
+        # response = ""
+        # try:
+        #     info = ydl.extract_info(qs['url'][0], download=False)
+        #     response = json.dumps(ydl.sanitize_info(info))
+        # except Exception as ex:
+        #     self.fail("ydl exception: {}".format(repr(ex)))
+        #     return
 
         response_bytes = response.encode()
         self.send_response(200)
