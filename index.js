@@ -352,9 +352,9 @@ function processVideoFormats(formats, isStream) {
     tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
     tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec === 'none')));
 
-    tracks.push(filteredFormats.find((format) => (vcodec === 'vp9' && format.height <= 2160 && format.height > 1080)));
-    tracks.push(filteredFormats.find((format) => (vcodec === 'vp9' && format.height <= 1080 && format.height > 720)));
-    tracks.push(filteredFormats.find((format) => (vcodec === 'vp9' && format.height <= 720)));
+    tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 2160 && format.height > 1080)));
+    tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 1080 && format.height > 720)));
+    tracks.push(filteredFormats.find((format) => (format.vcodec === 'vp9' && format.height <= 720)));
   }
 
   return tracks.filter(Boolean);
