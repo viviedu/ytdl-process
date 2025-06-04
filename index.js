@@ -235,7 +235,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
   const processedVideoTracks = formats;
   const thumbnail = data.thumbnail || '';
 
-  const audioTracks = processAudioFormats(formats, true);
+  const audioTracks = [];
 
   const video_tracks = [];
 
@@ -248,24 +248,24 @@ module.exports.processV4 = (output, origin, locales = []) => {
   //
   // Type 1 is the best. There are (very rarely) youtube videos that do not have this kind of track.
   // Just return everything and let vivi-box pick, it knows whether it's on a Vivi Display or on a physical device
-  const formattedTracks = audioTracks.map(audioTrack => {
-    const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
-    const audio_language = language || 'unknown';
-    if (isSilentVideo(audio_bitrate)) {
-      return;
-    } else if (audio_fragments) {
-      const audioManifest = generateManifest({ ...audioTrack, duration }, true);
-      return { type: 'manifest', acodec, manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
-    } else {
-      return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
-    }
-  }).filter(Boolean);
+  // const formattedTracks = audioTracks.map(audioTrack => {
+  //   const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
+  //   const audio_language = language || 'unknown';
+  //   if (isSilentVideo(audio_bitrate)) {
+  //     return;
+  //   } else if (audio_fragments) {
+  //     const audioManifest = generateManifest({ ...audioTrack, duration }, true);
+  //     return { type: 'manifest', acodec, manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
+  //   } else {
+  //     return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
+  //   }
+  // }).filter(Boolean);
 
   return {
-    audio: formattedTracks,
+    audio: [],
     cookies,
     duration,
-    silent_video: formattedTracks.length === 0,
+    silent_video: false,
     subtitles: subtitlesForAllLocales,
     thumbnail,
     title,
