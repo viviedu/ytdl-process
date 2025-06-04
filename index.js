@@ -237,14 +237,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
 
   const audioTracks = processAudioFormats(formats, true);
 
-  const video_tracks = processedVideoTracks.map(formatInfo => {
-    if (formatInfo.fragments) {
-      const manifest = generateManifest({ ...formatInfo, duration });
-      return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
-    } else {
-      return { type: 'url', url: formatInfo.url, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
-    }
-  });
+  const video_tracks = [];
 
   // In V4 we just return all the eligible audio tracks and let the box pick.
   //
@@ -276,7 +269,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
     subtitles: subtitlesForAllLocales,
     thumbnail,
     title,
-    video: video_tracks
+    video: []
   };
 };
 
