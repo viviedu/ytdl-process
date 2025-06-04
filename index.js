@@ -351,6 +351,10 @@ function processVideoFormats(formats, isStream) {
 
     tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
     tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec === 'none')));
+
+    tracks.push(filteredFormats.find((format) => (vcodec === 'vp9' && format.height <= 2160 && format.height > 1080)));
+    tracks.push(filteredFormats.find((format) => (vcodec === 'vp9' && format.height <= 1080 && format.height > 720)));
+    tracks.push(filteredFormats.find((format) => (vcodec === 'vp9' && format.height <= 720)));
   }
 
   return tracks.filter(Boolean);
@@ -417,7 +421,7 @@ function filterVideoFormatCodecs(format) {
     // ignore tracks with no video
     && vcodec && vcodec !== 'none'
     // boxes can't play vp9 or av01
-    && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09')
+    && !vcodec.includes('av01') && !vcodec.includes('vp09')
     // In our gstreamer pipeline, seeking breaks for video only tracks that have protocol=https
     // I couldn't figure out why. Therefore we take tracks with protocol=m3u8 or protocol=dash
     && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
