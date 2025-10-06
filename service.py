@@ -46,6 +46,7 @@ class Handler(BaseHTTPRequestHandler):
 
         ydl_opts = {
             'forcejson': True,
+            'js_runtimes': ['node'],
             'logger': self,
             'quiet': True,
             'simulate': True
