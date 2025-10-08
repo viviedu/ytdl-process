@@ -1,6 +1,6 @@
 # Newer versions of alpine restrict installation of packages using system Python
 # We'll need to refactor `ytdl-process` to use a venv if we want to upgrade alpine
-FROM node:18-alpine3.18@sha256:4bdb3f3105718f0742bc8d64bb4e36e8f955ebbee295325e40ae80bc8ef78833
+FROM node:22-alpine3.18@sha256:303dec48be59e127b9166900a5548dcc36e070a50e0b1604f1324787f92fd900
 
 WORKDIR /workspace
 
