@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from generate_filtered_extractors import generate_filtered_extractors
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from sys import stderr
@@ -45,6 +46,7 @@ class Handler(BaseHTTPRequestHandler):
         version = qs.get('version', "2")
 
         ydl_opts = {
+            'allowed_extractors': generate_filtered_extractors(),
             'forcejson': True,
             'js_runtimes': { 'node': {} },
             'logger': self,
