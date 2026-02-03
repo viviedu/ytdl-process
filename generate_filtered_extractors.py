@@ -6,6 +6,7 @@ from yt_dlp.extractor import gen_extractor_classes
 # list of strings to reject any extractors which have these values as a substring
 # derived from yt-dlp extractors list
 FORBIDDEN_EXTRACTOR_STRINGS = (
+  'generic',
   'sex',
   'porn',
   'xx',
