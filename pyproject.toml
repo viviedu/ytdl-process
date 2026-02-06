@@ -1,0 +1,18 @@
+[project]
+name = "vivi-ytdl-proccess"
+version = "0.1.0"
+description = "A common wraper around ytdl"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "yt-dlp[default]",
+]
+
+# linter
+[tool.ruff]
+line-length = 160
+target-version = "py312"
+
+[tool.ruff.format]
+quote-style = "double"
+

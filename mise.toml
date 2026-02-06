@@ -1,0 +1,29 @@
+[tools]
+python = "3.12"
+ruff = "0.14"
+ty = "0.0"
+uv = "0.9"
+node = "24"
+
+[settings]
+python.uv_venv_auto = true
+
+[tasks.install-frozen]
+description = "Install dependencies"
+alias = "if"
+run = "yarn install --frozen-lockfile && uv sync --frozen"
+
+[tasks.install]
+description = "Install dependencies"
+alias = "i"
+run = "yarn install && uv sync"
+
+[tasks.lint]
+description = "Lint the code"
+alias = "l"
+run = "ruff check && ty check && yarn lint"
+
+[tasks.lint-fix]
+description = "Lint the code"
+alias = "lf"
+run = "ruff format && yarn lint:fix"
