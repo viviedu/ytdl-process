@@ -58,11 +58,8 @@ class Handler(BaseHTTPRequestHandler):
             self.fail("ydl exception: {}".format(repr(ex)))
             return
 
-    def download_audio_and_video(self, ytdl_opts, url):
-        filename = os.path.join("/tmp", f"file_{random.randint(100000, 999999)}")
-
+    def download_audio_and_video(self, ytdl_opts, url, filename):
         ytdl_opts["format"] = f"bestvideo[filesize_approx<{MAX_FILE_SIZE}],bestaudio"
-        ytdl_opts["outtmpl"] = f"{filename}_%(id)s_%(format_id)s.%(ext)s"
 
         try:
             with YoutubeDL(ytdl_opts) as ydl:
@@ -95,11 +92,8 @@ class Handler(BaseHTTPRequestHandler):
             self.warning(f"error: {str(e)}, url={url}")
             return False
 
-    def download_combined_track(self, ytdl_opts, url):
-        filename = os.path.join("/tmp", f"file_{random.randint(100000, 999999)}")
-
+    def download_combined_track(self, ytdl_opts, url, filename):
         ytdl_opts["format"] = f"best[acodec!=none][vcodec!=none][filesize_approx<{MAX_FILE_SIZE}]"
-        ytdl_opts["outtmpl"] = f"{filename}_%(id)s_%(format_id)s.%(ext)s"
 
         try:
             with YoutubeDL(ytdl_opts) as ydl:
@@ -165,10 +159,19 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/download":
             if proxy_url and proxy_url[0] != "":
                 ydl_opts["proxy"] = proxy_url[0]
-
-            download_res = self.download_combined_track(ydl_opts, qs["url"][0])
+            
+            filename = os.path.join("/tmp", f"file_{random.randint(100000, 999999)}")
+            ydl_opts["cachedir"] = False
+            ydl_opts["simulate"] = False
+            ydl_opts["outtmpl"] = f"{filename}_%(id)s_%(format_id)s.%(ext)s"
+            ydl_opts["sleep_requests"] = 2 # 2s between HTTP requests
+            ydl_opts["socket_timeout"] = 120
+            ydl_opts["retries"] = 5
+            ydl_opts["fragment_retries"] = 5
+    
+            download_res = self.download_combined_track(ydl_opts, qs["url"][0], filename)
             if not download_res:
-                download_res = self.download_audio_and_video(ydl_opts, qs["url"][0])
+                download_res = self.download_audio_and_video(ydl_opts, qs["url"][0], filename)
 
             if download_res:
                 response = json.dumps(download_res)
