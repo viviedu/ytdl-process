@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const { join } = require('path');
+const { readdir, unlink } = require('node:fs/promises');
 
 // constants
 const EN_LIST = ['en-us', 'en-gb', 'en', 'en-au'];
@@ -290,6 +291,12 @@ module.exports.processPlaylist = (output) => {
 
 module.exports.spawnPythonService = (additionalEnv = {}) => {
   return spawn('python3', ['-u', join(__dirname, 'service.py')], { env: { ...process.env, ...additionalEnv } });
+};
+
+module.exports.cleanDownloads = async () => {
+  for (const file of await readdir('/tmp')) {
+    await unlink(join('/tmp', file));
+  }
 };
 
 // private

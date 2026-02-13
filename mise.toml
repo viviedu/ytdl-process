@@ -7,8 +7,18 @@ node = "24"
 
 [settings]
 python.uv_venv_auto = true
+experimental = true
+
+[hooks]
+postinstall = "mise run activate"
+
+[tasks.activate]
+description = "activates the config"
+alias = "a"
+run = "corepack enable"
 
 [tasks.install-frozen]
+depends = ["activate"]
 description = "Install dependencies"
 alias = "if"
 run = "yarn install --frozen-lockfile && uv sync --frozen"
@@ -27,3 +37,4 @@ run = "ruff check && ty check && yarn lint"
 description = "Lint the code"
 alias = "lf"
 run = "ruff format && yarn lint:fix"
+
