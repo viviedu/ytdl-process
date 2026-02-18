@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import tempfile
 from generate_filtered_extractors import generate_filtered_extractors
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
@@ -7,6 +9,8 @@ from sys import stderr
 from urllib.parse import parse_qs, urlparse
 from yt_dlp import YoutubeDL
 import json
+
+MAX_FILE_SIZE = "5000M"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -34,9 +38,86 @@ class Handler(BaseHTTPRequestHandler):
         response_bytes = msg.encode()
         self.send_response(500)
         self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", len(response_bytes))
+        self.send_header("Content-Length", str(len(response_bytes)))
         self.end_headers()
         self.wfile.write(response_bytes)
+
+    def ytdl_request(self, ytdl_opts, url):
+        try:
+            with YoutubeDL(ytdl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+
+            response = json.dumps(ydl.sanitize_info(info))
+            response_bytes = response.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(response_bytes)))
+            self.end_headers()
+            self.wfile.write(response_bytes)
+        except Exception as ex:
+            self.fail("ydl exception: {}".format(repr(ex)))
+            return
+
+    def download_split_tracks(self, ytdl_opts, url, filename):
+        ytdl_opts["format"] = f"bestvideo[filesize_approx<{MAX_FILE_SIZE}],bestaudio"
+
+        try:
+            with YoutubeDL(ytdl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+
+            id = info["id"]
+            requested_downloads = info["requested_downloads"]
+            if len(requested_downloads) != 2:
+                self.warning(f"expected 2 tracks, got {len(requested_downloads)}: url={url}")
+                return False
+
+            video_file = requested_downloads[0] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[1]
+            audio_file = requested_downloads[1] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[0]
+
+            video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
+            audio_filename_with_ext = f"{filename}/{id}_{audio_file['format_id']}.{audio_file['ext']}"
+
+            if not os.path.exists(audio_filename_with_ext):
+                self.warning(f"audio file cannot be found after downloading: url={url}")
+                return False
+
+            if not os.path.exists(video_filename_with_ext):
+                self.warning(f"video file cannot be found after downloading: url={url}")
+                return False
+
+            self.debug(f"audio and video downloaded successfully: url={url}, audio={audio_filename_with_ext}, video={video_filename_with_ext}")
+
+            return {"video": video_filename_with_ext, "audio": audio_filename_with_ext}
+        except Exception as e:
+            self.warning(f"error: {str(e)}, url={url}")
+            return False
+
+    def download_combined_track(self, ytdl_opts, url, filename):
+        ytdl_opts["format"] = f"best[acodec!=none][vcodec!=none][filesize_approx<{MAX_FILE_SIZE}]"
+
+        try:
+            with YoutubeDL(ytdl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+
+            id = info["id"]
+            requested_downloads = info["requested_downloads"]
+            if len(requested_downloads) != 1:
+                self.warning(f"expected 1 tracks, got {len(requested_downloads)}: url={url}")
+                return False
+
+            video_file = requested_downloads[0]
+            video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
+
+            if not os.path.exists(video_filename_with_ext):
+                self.warning(f"video file cannot be found after downloading: url={url}")
+                return False
+
+            self.debug(f"audio and video downloaded successfully: url={url}, video={video_filename_with_ext}")
+
+            return {"video": video_filename_with_ext}
+        except Exception as e:
+            self.warning(f"error: {str(e)}, url={url}")
+            return False
 
     def do_GET(self):
         url = urlparse(self.path)
@@ -71,27 +152,39 @@ class Handler(BaseHTTPRequestHandler):
             # different clients. We add 'web_safari' to the list, because this causes youtube to return combined 720p/1080p m3u8 tracks which
             # are handy to have. More clients = hitting youtube more times. This option is ignored by yt-dlp for URLs that are not youtube.
             ydl_opts["extractor_args"] = {"youtube": {"player_client": ["ios", "web_creator", "web_safari"]}}
+            self.ytdl_request(ydl_opts, qs["url"][0])
         elif url.path == "/process_playlist":
             ydl_opts["extract_flat"] = True
+            self.ytdl_request(ydl_opts, qs["url"][0])
+        elif url.path == "/download":
+            if proxy_url and proxy_url[0] != "":
+                ydl_opts["proxy"] = proxy_url[0]
+            
+            filename = tempfile.mkdtemp()
+            ydl_opts["cachedir"] = False
+            ydl_opts["simulate"] = False
+            ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
+            ydl_opts["sleep_requests"] = 2 # 2s between HTTP requests
+            ydl_opts["socket_timeout"] = 120
+            ydl_opts["retries"] = 5
+            ydl_opts["fragment_retries"] = 5
+    
+            download_res = self.download_combined_track(ydl_opts, qs["url"][0], filename)
+            if not download_res:
+                download_res = self.download_split_tracks(ydl_opts, qs["url"][0], filename)
+
+            if download_res:
+                response = json.dumps(download_res)
+                response_bytes = response.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(response_bytes)))
+                self.end_headers()
+                self.wfile.write(response_bytes)
+            else:
+                self.fail("failed all downloads")
         else:
             self.fail("no matching path: {}".format(url.path))
-            return
-
-        ydl = YoutubeDL(ydl_opts)
-        response = ""
-        try:
-            info = ydl.extract_info(qs["url"][0], download=False)
-            response = json.dumps(ydl.sanitize_info(info))
-        except Exception as ex:
-            self.fail("ydl exception: {}".format(repr(ex)))
-            return
-
-        response_bytes = response.encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", len(response_bytes))
-        self.end_headers()
-        self.wfile.write(response_bytes)
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
