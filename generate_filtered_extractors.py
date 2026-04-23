@@ -49,6 +49,8 @@ FORBIDDEN_EXTRACTOR_STRINGS = (
     "myvidster",
     "murrtube",
     "goshgay",
+    "fux",
+    "nonktube"
 )
 
 
