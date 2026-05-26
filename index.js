@@ -103,11 +103,16 @@ module.exports.isPlaylist = (url) => {
 // boxes on version 2.8.5 or later.
 module.exports.process = (output, origin) => {
   let data;
+
   try {
     data = JSON.parse(output.toString().trim());
   } catch (e) {
     throw new Error(`Failed to parse yt-dlp output as JSON: ${e.message}`);
   }
+  if (data === null) {
+    throw new Error(`Failed to parse yt-dlp output as JSON: output was null`);
+  }
+
   const { automatic_captions, subtitles, url } = data;
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
@@ -143,6 +148,9 @@ module.exports.processV2 = (output, origin) => {
     data = JSON.parse(output.toString().trim());
   } catch (e) {
     throw new Error(`Failed to parse yt-dlp output as JSON: ${e.message}`);
+  }
+  if (data === null) {
+    throw new Error(`Failed to parse yt-dlp output as JSON: output was null`);
   }
   const { automatic_captions, subtitles, url } = data;
 
@@ -184,6 +192,9 @@ module.exports.processV3 = (output, origin, locales = []) => {
     data = JSON.parse(output.toString().trim());
   } catch (e) {
     throw new Error(`Failed to parse yt-dlp output as JSON: ${e.message}`);
+  }
+  if (data === null) {
+    throw new Error(`Failed to parse yt-dlp output as JSON: output was null`);
   }
   const { automatic_captions, formats, subtitles } = data;
 
@@ -246,6 +257,9 @@ module.exports.processV4 = (output, origin, locales = []) => {
     data = JSON.parse(output.toString().trim());
   } catch (e) {
     throw new Error(`Failed to parse yt-dlp output as JSON: ${e.message}`);
+  }
+  if (data === null) {
+    throw new Error(`Failed to parse yt-dlp output as JSON: output was null`);
   }
   const { automatic_captions, formats, subtitles } = data;
   const cookies = data.http_headers && data.http_headers.Cookie || '';
