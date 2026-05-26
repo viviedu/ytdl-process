@@ -98,12 +98,8 @@ module.exports.isPlaylist = (url) => {
   return url.startsWith('https://www.youtube.com/playlist?list=');
 };
 
-// The "old" process method. It will sometimes return DASH manifests. These
-// manifests may be more than what iMX can handle, so use `processV2` for
-// boxes on version 2.8.5 or later.
-module.exports.process = (output, origin) => {
+const parseYtdlOutput = (output) => {
   let data;
-
   try {
     data = JSON.parse(output.toString().trim());
   } catch (e) {
@@ -112,6 +108,14 @@ module.exports.process = (output, origin) => {
   if (data === null) {
     throw new Error(`Failed to parse yt-dlp output as JSON: output was null`);
   }
+  return data;
+};
+
+// The "old" process method. It will sometimes return DASH manifests. These
+// manifests may be more than what iMX can handle, so use `processV2` for
+// boxes on version 2.8.5 or later.
+module.exports.process = (output, origin) => {
+  const data = parseYtdlOutput(output);
 
   const { automatic_captions, subtitles, url } = data;
 
@@ -143,15 +147,7 @@ module.exports.process = (output, origin) => {
 // Android. Mixed iMX and Android multi display rooms will need to have two
 // ytdl requests to get both resolutions
 module.exports.processV2 = (output, origin) => {
-  let data;
-  try {
-    data = JSON.parse(output.toString().trim());
-  } catch (e) {
-    throw new Error(`Failed to parse yt-dlp output as JSON: ${e.message}`);
-  }
-  if (data === null) {
-    throw new Error(`Failed to parse yt-dlp output as JSON: output was null`);
-  }
+  const data = parseYtdlOutput(output);
   const { automatic_captions, subtitles, url } = data;
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
@@ -187,15 +183,7 @@ module.exports.processV2 = (output, origin) => {
 
 // processV3 returns a list of video tracks instead of a single one
 module.exports.processV3 = (output, origin, locales = []) => {
-  let data;
-  try {
-    data = JSON.parse(output.toString().trim());
-  } catch (e) {
-    throw new Error(`Failed to parse yt-dlp output as JSON: ${e.message}`);
-  }
-  if (data === null) {
-    throw new Error(`Failed to parse yt-dlp output as JSON: output was null`);
-  }
+  const data = parseYtdlOutput(output);
   const { automatic_captions, formats, subtitles } = data;
 
   const cookies = data.http_headers && data.http_headers.Cookie || '';
@@ -252,15 +240,7 @@ module.exports.processV3 = (output, origin, locales = []) => {
 
 // processV4 returns a list of video tracks and a list of audio tracks
 module.exports.processV4 = (output, origin, locales = []) => {
-  let data;
-  try {
-    data = JSON.parse(output.toString().trim());
-  } catch (e) {
-    throw new Error(`Failed to parse yt-dlp output as JSON: ${e.message}`);
-  }
-  if (data === null) {
-    throw new Error(`Failed to parse yt-dlp output as JSON: output was null`);
-  }
+  const data = parseYtdlOutput(output);
   const { automatic_captions, formats, subtitles } = data;
   const cookies = data.http_headers && data.http_headers.Cookie || '';
   const duration = data.duration || 0;
