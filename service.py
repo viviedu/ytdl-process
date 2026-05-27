@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from yt_dlp import YoutubeDL
 import json
 
-MAX_FILE_SIZE = "5000M"
+MAX_DOWNLOAD_BIT_RATE_KB = "8000"  # 8Mbps same as in the media lambda
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -59,7 +59,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
     def download_split_tracks(self, ytdl_opts, url, filename):
-        ytdl_opts["format"] = f"bestvideo[filesize_approx<{MAX_FILE_SIZE}],bestaudio"
+        ytdl_opts["format"] = f"bestvideo[vbr<={MAX_DOWNLOAD_BIT_RATE_KB}],bestaudio"
 
         try:
             with YoutubeDL(ytdl_opts) as ydl:
@@ -93,7 +93,7 @@ class Handler(BaseHTTPRequestHandler):
             return False
 
     def download_combined_track(self, ytdl_opts, url, filename):
-        ytdl_opts["format"] = f"best[acodec!=none][vcodec!=none][filesize_approx<{MAX_FILE_SIZE}]"
+        ytdl_opts["format"] = f"best[acodec!=none][vcodec!=none][tbr=<{MAX_DOWNLOAD_BIT_RATE_KB}]"
 
         try:
             with YoutubeDL(ytdl_opts) as ydl:
@@ -159,16 +159,16 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/download":
             if proxy_url and proxy_url[0] != "":
                 ydl_opts["proxy"] = proxy_url[0]
-            
+
             filename = tempfile.mkdtemp()
             ydl_opts["cachedir"] = False
             ydl_opts["simulate"] = False
             ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
-            ydl_opts["sleep_requests"] = 2 # 2s between HTTP requests
+            ydl_opts["sleep_requests"] = 2  # 2s between HTTP requests
             ydl_opts["socket_timeout"] = 120
             ydl_opts["retries"] = 5
             ydl_opts["fragment_retries"] = 5
-    
+
             download_res = self.download_combined_track(ydl_opts, qs["url"][0], filename)
             if not download_res:
                 download_res = self.download_split_tracks(ydl_opts, qs["url"][0], filename)
