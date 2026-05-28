@@ -50,7 +50,7 @@ FORBIDDEN_EXTRACTOR_STRINGS = (
     "murrtube",
     "goshgay",
     "fux",
-    "nonktube"
+    "nonktube",
 )
 
 
