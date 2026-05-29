@@ -161,6 +161,7 @@ class Handler(BaseHTTPRequestHandler):
                 ydl_opts["proxy"] = proxy_url[0]
 
             filename = tempfile.mkdtemp()
+            ydl_opts["noplaylist"] = True
             ydl_opts["cachedir"] = False
             ydl_opts["simulate"] = False
             ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
