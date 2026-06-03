@@ -8,9 +8,17 @@ from socketserver import ThreadingMixIn
 from sys import stderr
 from urllib.parse import parse_qs, urlparse
 from yt_dlp import YoutubeDL
+from yt_dlp.utils import DownloadError, GeoRestrictedError, UnavailableVideoError
 import json
 
 MAX_DOWNLOAD_BIT_RATE_KB = "8000"  # 8Mbps same as in the media lambda
+
+
+def limit_to_hour(info, *, incomplete):
+    """Download only videos shorter than an hour (or with unknown duration)"""
+    duration = info.get("duration")
+    if duration and duration > 3600:
+        return "The video is too long"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -42,6 +50,15 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(response_bytes)
 
+    def _fail_download(self, msg, status):
+        print(msg, file=stderr)
+        response_bytes = json.dumps({"error": msg, "status": status}).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response_bytes)))
+        self.end_headers()
+        self.wfile.write(response_bytes)
+
     def ytdl_request(self, ytdl_opts, url):
         try:
             with YoutubeDL(ytdl_opts) as ydl:
@@ -61,63 +78,55 @@ class Handler(BaseHTTPRequestHandler):
     def download_split_tracks(self, ytdl_opts, url, filename):
         ytdl_opts["format"] = f"bestvideo[vbr<={MAX_DOWNLOAD_BIT_RATE_KB}],bestaudio"
 
-        try:
-            with YoutubeDL(ytdl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+        with YoutubeDL(ytdl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
 
-            id = info["id"]
-            requested_downloads = info["requested_downloads"]
-            if len(requested_downloads) != 2:
-                self.warning(f"expected 2 tracks, got {len(requested_downloads)}: url={url}")
-                return False
-
-            video_file = requested_downloads[0] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[1]
-            audio_file = requested_downloads[1] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[0]
-
-            video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
-            audio_filename_with_ext = f"{filename}/{id}_{audio_file['format_id']}.{audio_file['ext']}"
-
-            if not os.path.exists(audio_filename_with_ext):
-                self.warning(f"audio file cannot be found after downloading: url={url}")
-                return False
-
-            if not os.path.exists(video_filename_with_ext):
-                self.warning(f"video file cannot be found after downloading: url={url}")
-                return False
-
-            self.debug(f"audio and video downloaded successfully: url={url}, audio={audio_filename_with_ext}, video={video_filename_with_ext}")
-
-            return {"video": video_filename_with_ext, "audio": audio_filename_with_ext}
-        except Exception as e:
-            self.warning(f"error: {str(e)}, url={url}")
+        id = info["id"]
+        requested_downloads = info["requested_downloads"]
+        if len(requested_downloads) != 2:
+            self.warning(f"expected 2 tracks, got {len(requested_downloads)}: url={url}")
             return False
+
+        video_file = requested_downloads[0] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[1]
+        audio_file = requested_downloads[1] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[0]
+
+        video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
+        audio_filename_with_ext = f"{filename}/{id}_{audio_file['format_id']}.{audio_file['ext']}"
+
+        if not os.path.exists(audio_filename_with_ext):
+            self.warning(f"audio file cannot be found after downloading: url={url}")
+            return False
+
+        if not os.path.exists(video_filename_with_ext):
+            self.warning(f"video file cannot be found after downloading: url={url}")
+            return False
+
+        self.debug(f"audio and video downloaded successfully: url={url}, audio={audio_filename_with_ext}, video={video_filename_with_ext}")
+
+        return {"video": video_filename_with_ext, "audio": audio_filename_with_ext}
 
     def download_combined_track(self, ytdl_opts, url, filename):
-        ytdl_opts["format"] = f"best[acodec!=none][vcodec!=none][tbr=<{MAX_DOWNLOAD_BIT_RATE_KB}]"
+        ytdl_opts["format"] = f"best[acodec!=none][vcodec!=none][tbr<={MAX_DOWNLOAD_BIT_RATE_KB}]"
 
-        try:
-            with YoutubeDL(ytdl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+        with YoutubeDL(ytdl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
 
-            id = info["id"]
-            requested_downloads = info["requested_downloads"]
-            if len(requested_downloads) != 1:
-                self.warning(f"expected 1 tracks, got {len(requested_downloads)}: url={url}")
-                return False
-
-            video_file = requested_downloads[0]
-            video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
-
-            if not os.path.exists(video_filename_with_ext):
-                self.warning(f"video file cannot be found after downloading: url={url}")
-                return False
-
-            self.debug(f"audio and video downloaded successfully: url={url}, video={video_filename_with_ext}")
-
-            return {"video": video_filename_with_ext}
-        except Exception as e:
-            self.warning(f"error: {str(e)}, url={url}")
+        id = info["id"]
+        requested_downloads = info["requested_downloads"]
+        if len(requested_downloads) != 1:
+            self.warning(f"expected 1 tracks, got {len(requested_downloads)}: url={url}")
             return False
+
+        video_file = requested_downloads[0]
+        video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
+
+        if not os.path.exists(video_filename_with_ext):
+            self.warning(f"video file cannot be found after downloading: url={url}")
+            return False
+
+        self.debug(f"audio and video downloaded successfully: url={url}, video={video_filename_with_ext}")
+
+        return {"video": video_filename_with_ext}
 
     def do_GET(self):
         url = urlparse(self.path)
@@ -169,10 +178,30 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts["socket_timeout"] = 120
             ydl_opts["retries"] = 5
             ydl_opts["fragment_retries"] = 5
+            ydl_opts["match_filter"] = limit_to_hour
 
-            download_res = self.download_combined_track(ydl_opts, qs["url"][0], filename)
-            if not download_res:
-                download_res = self.download_split_tracks(ydl_opts, qs["url"][0], filename)
+            try:
+                download_res = self.download_combined_track(ydl_opts, qs["url"][0], filename)
+                if not download_res:
+                    download_res = self.download_split_tracks(ydl_opts, qs["url"][0], filename)
+            except (GeoRestrictedError, UnavailableVideoError) as ex:
+                self._fail_download(str(ex), 404)
+                return
+            except DownloadError as ex:
+                msg = str(ex)
+                if "429" in msg or "Too Many Request" in msg:
+                    status = 429
+                elif any(s in msg for s in ("not available", "has been removed", "Private video", "unavailable", "does not exist")):
+                    status = 404
+                elif "The video is too long" in msg:
+                    status = 400
+                else:
+                    status = 502
+                self._fail_download(msg, status)
+                return
+            except Exception as ex:
+                self._fail_download(str(ex), 500)
+                return
 
             if download_res:
                 response = json.dumps(download_res)
@@ -183,7 +212,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(response_bytes)
             else:
-                self.fail("failed all downloads")
+                self._fail_download("failed all downloads", 502)
         else:
             self.fail("no matching path: {}".format(url.path))
 
