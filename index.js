@@ -106,7 +106,7 @@ const parseYtdlOutput = (output) => {
     throw new Error(`Failed to parse yt-dlp output as JSON: ${e.message}`);
   }
   if (data === null) {
-    throw new Error(`Failed to parse yt-dlp output as JSON: output was null`);
+    throw new Error('Failed to parse yt-dlp output as JSON: output was null');
   }
   return data;
 };
