@@ -14,13 +14,6 @@ import json
 MAX_DOWNLOAD_BIT_RATE_KB = "8000"  # 8Mbps same as in the media lambda
 
 
-def limit_to_hour(info, *, incomplete):
-    """Download only videos shorter than an hour (or with unknown duration)"""
-    duration = info.get("duration")
-    if duration and duration > 3600:
-        return "The video is too long"
-
-
 class Handler(BaseHTTPRequestHandler):
     def debug(self, msg):
         print("ydl debug: {}".format(msg), file=stderr)
@@ -178,7 +171,7 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts["socket_timeout"] = 120
             ydl_opts["retries"] = 5
             ydl_opts["fragment_retries"] = 5
-            ydl_opts["match_filter"] = limit_to_hour
+            ydl_opts["download_ranges"] = lambda info, ydl: [{"start_time": 0, "end_time": 3600}]  # limit to first hour
 
             try:
                 download_res = self.download_combined_track(ydl_opts, qs["url"][0], filename)
@@ -193,8 +186,6 @@ class Handler(BaseHTTPRequestHandler):
                     status = 429
                 elif any(s in msg for s in ("not available", "has been removed", "Private video", "unavailable", "does not exist")):
                     status = 404
-                elif "The video is too long" in msg:
-                    status = 400
                 else:
                     status = 502
                 self._fail_download(msg, status)
