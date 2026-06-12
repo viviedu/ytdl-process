@@ -3,8 +3,8 @@
 import os
 import tempfile
 from generate_filtered_extractors import generate_filtered_extractors
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from socketserver import ThreadingMixIn
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import StreamRequestHandler, ThreadingUnixStreamServer
 from sys import stderr
 from urllib.parse import parse_qs, urlparse
 from yt_dlp import YoutubeDL
@@ -13,34 +13,23 @@ import json
 MAX_DOWNLOAD_BIT_RATE_KB = "8000"  # 8Mbps same as in the media lambda
 
 
-class Handler(BaseHTTPRequestHandler):
+class Handler:
+    path = ""
+
     def debug(self, msg):
         print("ydl debug: {}".format(msg), file=stderr)
 
     def warning(self, msg):
         print("ydl warning: {}".format(msg), file=stderr)
 
-        # 429 responses that come through as warnings fail to
-        # be caught by the ytdl service, so we must escalate them
-        # to errors
-        if "429" in msg or "Too Many Request" in msg:
-            self.fail(msg)
-        pass
-
     def error(self, msg):
         print("ydl error: {}".format(msg), file=stderr)
-        pass
 
     def fail(self, msg):
-        print(msg, file=stderr)
-        # create our own error response rather than using send_error to
-        # avoid bloating response with HTML wrapping
-        response_bytes = msg.encode()
-        self.send_response(500)
-        self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", str(len(response_bytes)))
-        self.end_headers()
-        self.wfile.write(response_bytes)
+        pass
+
+    def success(self, msg):
+        pass
 
     def ytdl_request(self, ytdl_opts, url):
         try:
@@ -48,12 +37,7 @@ class Handler(BaseHTTPRequestHandler):
                 info = ydl.extract_info(url, download=False)
 
             response = json.dumps(ydl.sanitize_info(info))
-            response_bytes = response.encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.send_header("Content-Length", str(len(response_bytes)))
-            self.end_headers()
-            self.wfile.write(response_bytes)
+            self.success(response)
         except Exception as ex:
             self.fail("ydl exception: {}".format(repr(ex)))
             return
@@ -85,8 +69,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.warning(f"video file cannot be found after downloading: url={url}")
                 return False
 
-            self.debug(f"audio and video downloaded successfully: url={url}, audio={audio_filename_with_ext}, video={video_filename_with_ext}")
-
             return {"video": video_filename_with_ext, "audio": audio_filename_with_ext}
         except Exception as e:
             self.warning(f"error: {str(e)}, url={url}")
@@ -111,8 +93,6 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.exists(video_filename_with_ext):
                 self.warning(f"video file cannot be found after downloading: url={url}")
                 return False
-
-            self.debug(f"audio and video downloaded successfully: url={url}, video={video_filename_with_ext}")
 
             return {"video": video_filename_with_ext}
         except Exception as e:
@@ -175,23 +155,63 @@ class Handler(BaseHTTPRequestHandler):
                 download_res = self.download_split_tracks(ydl_opts, qs["url"][0], filename)
 
             if download_res:
-                response = json.dumps(download_res)
-                response_bytes = response.encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
-                self.send_header("Content-Length", str(len(response_bytes)))
-                self.end_headers()
-                self.wfile.write(response_bytes)
+                self.success(download_res)
             else:
                 self.fail("failed all downloads")
         else:
             self.fail("no matching path: {}".format(url.path))
 
 
-class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
-    pass
+class HttpHandler(BaseHTTPRequestHandler, Handler):
+    def fail(self, msg):
+        # create our own error response rather than using send_error to
+        # avoid bloating response with HTML wrapping
+        response_bytes = msg.encode()
+        self.send_response(500)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(response_bytes)))
+        self.end_headers()
+        self.wfile.write(response_bytes)
+
+    def success(self, msg):
+        # create our own error response rather than using send_error to
+        # avoid bloating response with HTML wrapping
+        response_bytes = msg.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(response_bytes)))
+        self.end_headers()
+        self.wfile.write(response_bytes)
 
 
+class StreamHandler(StreamRequestHandler, Handler):
+    def handle(self):
+        request_line = self.rfile.readline().decode().strip()
+        # consume headers
+        while self.rfile.readline().decode().strip():
+            pass
+        parts = request_line.split(" ")
+        if len(parts) >= 2:
+            self.path = parts[1]
+            self.do_GET()
+
+    def fail(self, msg):
+        self.wfile.write(json.dumps({"error": msg}).encode())
+
+    def success(self, msg):
+        if isinstance(msg, str):
+            self.wfile.write(msg.encode())
+        else:
+            self.wfile.write(json.dumps(msg).encode())
+
+
+TRANSPORT = os.environ.get("YTDL_TRANSPORT", "http")
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("127.0.0.1", 4444), Handler)
-    server.serve_forever()
+    if TRANSPORT == "stdio":
+        if os.path.exists("/tmp/ytdl"):
+            os.unlink("/tmp/ytdl")
+        server = ThreadingUnixStreamServer("/tmp/ytdl", StreamHandler)
+        server.serve_forever()
+    else:
+        server = ThreadingHTTPServer(("127.0.0.1", 4444), HttpHandler)
+        server.serve_forever()

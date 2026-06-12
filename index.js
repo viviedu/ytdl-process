@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const net = require('net');
 const { join } = require('path');
 
 // constants
@@ -288,9 +289,158 @@ module.exports.processPlaylist = (output) => {
   return [];
 };
 
-module.exports.spawnPythonService = (additionalEnv = {}) => {
-  return spawn('python3', ['-u', join(__dirname, 'service.py')], { env: { ...process.env, ...additionalEnv } });
+module.exports.spawnPythonService = (additionalEnv = {}, transport = 'http') => {
+  return spawn('python3', ['-u', join(__dirname, 'service.py')], {
+    env: { ...process.env, YTDL_TRANSPORT: transport, ...additionalEnv }
+  });
 };
+
+const SOCKET_PATH = '/tmp/ytdl';
+
+// PythonService manages a long-lived ytdl-process child running in `stdio`
+// transport, which creates a Unix domain socket at /tmp/ytdl. Each request
+// opens a new connection, sends an HTTP-style GET request, and reads the
+// response until the connection closes.
+//
+// Usage:
+//   const service = new PythonService({ onStderr: (line) => log(line) }).start();
+//   const info = await service.process({ url, version: 4, proxyUrl });
+//
+// The child is respawned automatically if it exits.
+class PythonService {
+  constructor(options = {}) {
+    this.env = options.env || {};
+    this.restartDelayMs = options.restartDelayMs ?? 1000;
+    // 0 disables the per-request timeout. Downloads can take several minutes,
+    // so callers that mix downloads and processing should leave this off (or
+    // set a generous value) to avoid killing legitimate long downloads.
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 0;
+    this.onStderr = options.onStderr;
+    this.onExit = options.onExit;
+    this.onSpawn = options.onSpawn;
+
+    this._child = null;
+    this._stopped = false;
+  }
+
+  start() {
+    this._stopped = false;
+    this._spawn();
+    return this;
+  }
+
+  stop() {
+    this._stopped = true;
+    if (this._child) {
+      this._child.kill();
+    }
+  }
+
+  get pid() {
+    return this._child ? this._child.pid : undefined;
+  }
+
+  process({ url, version, proxyUrl = '' }) {
+    return this._request('/process', { url, version, proxy_url: proxyUrl });
+  }
+
+  processPlaylist({ url, proxyUrl = '' }) {
+    return this._request('/process_playlist', { url, proxy_url: proxyUrl });
+  }
+
+  download({ url, proxyUrl = '' }) {
+    return this._request('/download', { url, proxy_url: proxyUrl });
+  }
+
+  _spawn() {
+    const child = module.exports.spawnPythonService(this.env, 'stdio');
+    this._child = child;
+
+    child.stderr.on('data', (data) => {
+      if (!this.onStderr) {
+        return;
+      }
+      for (const line of data.toString().split('\n')) {
+        if (line.trim()) {
+          this.onStderr(line);
+        }
+      }
+    });
+
+    child.on('exit', (code, signal) => {
+      this._child = null;
+      if (this.onExit) {
+        this.onExit(code, signal);
+      }
+      if (!this._stopped) {
+        setTimeout(() => this._spawn(), this.restartDelayMs);
+      }
+    });
+
+    if (this.onSpawn) {
+      this.onSpawn(child.pid);
+    }
+  }
+
+  _request(path, params) {
+    return new Promise((resolve, reject) => {
+      if (!this._child) {
+        reject(new Error('python service is not running'));
+        return;
+      }
+
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== '' && value !== null && value !== undefined) {
+          query.set(key, String(value));
+        }
+      }
+      const queryStr = query.toString();
+      const fullPath = queryStr ? `${path}?${queryStr}` : path;
+
+      let timer = null;
+      const sock = net.createConnection(SOCKET_PATH);
+
+      if (this.requestTimeoutMs > 0) {
+        timer = setTimeout(() => {
+          sock.destroy();
+          reject(new Error(`ytdl-process request timed out after ${this.requestTimeoutMs}ms`));
+        }, this.requestTimeoutMs);
+      }
+
+      let responseData = '';
+
+      sock.on('connect', () => {
+        sock.write(`GET ${fullPath} HTTP/1.1\r\n\r\n`);
+      });
+
+      sock.on('data', (chunk) => {
+        responseData += chunk.toString();
+      });
+
+      sock.on('end', () => {
+        if (timer) clearTimeout(timer);
+        try {
+          const parsed = JSON.parse(responseData);
+          if (parsed.error) {
+            reject(new Error(parsed.error));
+          } else {
+            resolve(parsed);
+          }
+        } catch {
+          reject(new Error(`failed to parse response: ${responseData.slice(0, 200)}`));
+        }
+      });
+
+      sock.on('error', (err) => {
+        if (timer) clearTimeout(timer);
+        reject(err);
+      });
+    });
+  }
+}
+
+module.exports.PythonService = PythonService;
 
 // private
 
