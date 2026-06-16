@@ -295,29 +295,30 @@ module.exports.spawnPythonService = (additionalEnv = {}, transport = 'http') => 
   });
 };
 
-const SOCKET_PATH = '/tmp/ytdl';
+const DEFAULT_SOCKET_PATH = '/tmp/ytdl';
 
 // PythonService manages a long-lived ytdl-process child running in `stdio`
-// transport, which creates a Unix domain socket at /tmp/ytdl. Each request
+// transport, which creates a Unix domain socket at `socketPath`. Each request
 // opens a new connection, sends an HTTP-style GET request, and reads the
 // response until the connection closes.
 //
 // Usage:
-//   const service = new PythonService({ onStderr: (line) => log(line) }).start();
+//   const service = new PythonService({}, { onStderr: (line) => log(line) }).start();
 //   const info = await service.process({ url, version: 4, proxyUrl });
 //
 // The child is respawned automatically if it exits.
 class PythonService {
-  constructor(options = {}) {
-    this.env = options.env || {};
-    this.restartDelayMs = options.restartDelayMs ?? 1000;
+  constructor(env = {}, callbacks = {}, opts = {}) {
+    this.socketPath = opts.socketPath ?? DEFAULT_SOCKET_PATH;
+    this.env = { ...env, YTDL_SOCKET: this.socketPath };
+    this.onStderr = callbacks.onStderr;
+    this.onExit = callbacks.onExit;
+    this.onSpawn = callbacks.onSpawn;
+    this.restartDelayMs = opts.restartDelayMs ?? 1000;
     // 0 disables the per-request timeout. Downloads can take several minutes,
     // so callers that mix downloads and processing should leave this off (or
     // set a generous value) to avoid killing legitimate long downloads.
-    this.requestTimeoutMs = options.requestTimeoutMs ?? 0;
-    this.onStderr = options.onStderr;
-    this.onExit = options.onExit;
-    this.onSpawn = options.onSpawn;
+    this.requestTimeoutMs = opts.requestTimeoutMs ?? 0;
 
     this._child = null;
     this._stopped = false;
@@ -399,7 +400,7 @@ class PythonService {
       const fullPath = queryStr ? `${path}?${queryStr}` : path;
 
       let timer = null;
-      const sock = net.createConnection(SOCKET_PATH);
+      const sock = net.createConnection(this.socketPath);
 
       if (this.requestTimeoutMs > 0) {
         timer = setTimeout(() => {

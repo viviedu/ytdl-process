@@ -206,10 +206,11 @@ class StreamHandler(StreamRequestHandler, Handler):
 
 
 TRANSPORT = os.environ.get("YTDL_TRANSPORT", "http")
+SOCKET_PATH = os.environ.get("YTDL_SOCKET", "/tmp/ytdl")
 if __name__ == "__main__":
     if TRANSPORT == "stdio":
-        if os.path.exists("/tmp/ytdl"):
-            os.unlink("/tmp/ytdl")
+        if os.path.exists(SOCKET_PATH):
+            os.unlink(SOCKET_PATH)
         server = ThreadingUnixStreamServer("/tmp/ytdl", StreamHandler)
         server.serve_forever()
     else:
