@@ -138,7 +138,7 @@ const ytdlDataP = objectP<YtdlData>({
 const playlistEntryP = objectP<PlaylistEntry>({ id: stringP });
 
 const playlistDataP = objectP<PlaylistData>({
-  entries: optionalP(arrayP(playlistEntryP))
+  entries: arrayP(playlistEntryP)
 });
 
 // public

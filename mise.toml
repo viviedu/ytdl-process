@@ -4,6 +4,7 @@ ruff = "0.14"
 ty = "0.0"
 uv = "0.9"
 node = "24"
+pnpm = "latest"
 
 [settings]
 python.uv_venv_auto = true
