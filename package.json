@@ -2,17 +2,22 @@
   "name": "ytdl-process",
   "version": "1.0.3",
   "description": "Shared module for our youtube-dl processing",
+  "type": "module",
   "main": "index.js",
+  "types": "./index.d.ts",
   "devDependencies": {
+    "@types/node": "^20",
     "eslint": "^8",
     "jest": "^29.7.0",
-    "request": "^2.87.0"
+    "request": "^2.87.0",
+    "typescript": "^5"
   },
   "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "jest",
     "test-track-selection": "node tests/track_selection_test_script"
-  },
-  "types": "./ytdl-process.d.ts"
+  }
 }
