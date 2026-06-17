@@ -6,7 +6,7 @@
   "main": "index.js",
   "types": "./index.d.ts",
   "devDependencies": {
-    "@types/node": "^24",
+    "@types/node": "^24.13.2",
     "@viviedu/type-proxy": "^2.0.8",
     "jest": "^29.7.0",
     "oxlint": "^1.70.0",
@@ -15,8 +15,8 @@
   "scripts": {
     "build": "tsc",
     "prepare": "tsc",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint . --fix",
     "test": "jest",
     "test-track-selection": "node tests/track_selection_test_script"
   }
