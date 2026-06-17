@@ -1,10 +1,7 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as net from 'net';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { arrayP, numberP, objectP, optionalP, recordP, stringP, validate } from '@viviedu/type-proxy';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // constants
 const EN_LIST = ['en-us', 'en-gb', 'en', 'en-au'];
