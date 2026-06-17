@@ -14,29 +14,32 @@ MAX_DOWNLOAD_BIT_RATE_KB = "8000"  # 8Mbps same as in the media lambda
 
 
 class Handler(BaseHTTPRequestHandler):
-    def debug(self, msg):
-        print("ydl debug: {}".format(msg), file=stderr)
+    def debug(self, msg: str, level="debug"):
+        print(json.dumps({"message": msg, "level": level}), file=stderr)
 
     def warning(self, msg):
-        print("ydl warning: {}".format(msg), file=stderr)
-
-        # 429 responses that come through as warnings fail to
-        # be caught by the ytdl service, so we must escalate them
-        # to errors
-        if "429" in msg or "Too Many Request" in msg:
-            self.fail(msg)
-        pass
+        self.debug(msg, "warning")
 
     def error(self, msg):
-        print("ydl error: {}".format(msg), file=stderr)
-        pass
+        self.debug(msg, "error")
 
-    def fail(self, msg):
+    def fail(self, msg: object):
         print(msg, file=stderr)
         # create our own error response rather than using send_error to
         # avoid bloating response with HTML wrapping
-        response_bytes = msg.encode()
+        response_bytes = json.dumps(msg).encode()
         self.send_response(500)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(response_bytes)))
+        self.end_headers()
+        self.wfile.write(response_bytes)
+
+    def success(self, msg: object):
+        print(msg, file=stderr)
+        # create our own error response rather than using send_error to
+        # avoid bloating response with HTML wrapping
+        response_bytes = json.dumps(msg).encode()
+        self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(response_bytes)))
         self.end_headers()
@@ -47,15 +50,9 @@ class Handler(BaseHTTPRequestHandler):
             with YoutubeDL(ytdl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
 
-            response = json.dumps(ydl.sanitize_info(info))
-            response_bytes = response.encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.send_header("Content-Length", str(len(response_bytes)))
-            self.end_headers()
-            self.wfile.write(response_bytes)
+            self.success(ydl.sanitize_info(info))
         except Exception as ex:
-            self.fail("ydl exception: {}".format(repr(ex)))
+            self.fail(ex)
             return
 
     def download_split_tracks(self, ytdl_opts, url, filename):
@@ -93,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
             return False
 
     def download_combined_track(self, ytdl_opts, url, filename):
-        ytdl_opts["format"] = f"best[acodec!=none][vcodec!=none][tbr=<{MAX_DOWNLOAD_BIT_RATE_KB}]"
+        ytdl_opts["format"] = f"best[acodec!=none][vcodec!=none][tbr<={MAX_DOWNLOAD_BIT_RATE_KB}]"
 
         try:
             with YoutubeDL(ytdl_opts) as ydl:
@@ -167,7 +164,7 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
             ydl_opts["sleep_requests"] = 2  # 2s between HTTP requests
             ydl_opts["socket_timeout"] = 120
-            ydl_opts["retries"] = 5
+            ydl_opts["retries"] = float("inf")  # I know this looks like a lot but we have the fragment tries limit below that we want to use
             ydl_opts["fragment_retries"] = 5
 
             download_res = self.download_combined_track(ydl_opts, qs["url"][0], filename)
@@ -175,17 +172,11 @@ class Handler(BaseHTTPRequestHandler):
                 download_res = self.download_split_tracks(ydl_opts, qs["url"][0], filename)
 
             if download_res:
-                response = json.dumps(download_res)
-                response_bytes = response.encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
-                self.send_header("Content-Length", str(len(response_bytes)))
-                self.end_headers()
-                self.wfile.write(response_bytes)
+                self.success(download_res)
             else:
-                self.fail("failed all downloads")
+                self.fail({"message": "failed all downloads"})
         else:
-            self.fail("no matching path: {}".format(url.path))
+            self.fail({"message": "no matching path", "url": url.path})
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
