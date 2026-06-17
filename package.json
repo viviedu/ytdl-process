@@ -3,7 +3,7 @@
   "version": "1.0.3",
   "description": "Shared module for our youtube-dl processing",
   "type": "module",
-  "main": "index.js",
+  "main": "index.ts",
   "types": "./index.d.ts",
   "devDependencies": {
     "@types/node": "^24.13.2",
