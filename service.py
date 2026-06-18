@@ -24,9 +24,11 @@ class Handler(BaseHTTPRequestHandler):
         self.debug(msg, "error")
 
     def respond(self, status: int, msg: object):
+        # create our own response rather than using send_success/send_error to
+        # avoid bloating response with HTML wrapping
         response_bytes = json.dumps(msg).encode()
         self.send_response(status)
-        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(response_bytes)))
         self.end_headers()
         self.wfile.write(response_bytes)
