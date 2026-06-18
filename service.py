@@ -17,29 +17,15 @@ class Handler(BaseHTTPRequestHandler):
     def debug(self, msg: str, level="debug"):
         print(json.dumps({"message": msg, "level": level}), file=stderr)
 
-    def warning(self, msg):
+    def warning(self, msg: str):
         self.debug(msg, "warning")
 
-    def error(self, msg):
+    def error(self, msg: str):
         self.debug(msg, "error")
 
-    def fail(self, msg: object):
-        print(msg, file=stderr)
-        # create our own error response rather than using send_error to
-        # avoid bloating response with HTML wrapping
+    def respond(self, status: int, msg: object):
         response_bytes = json.dumps(msg).encode()
-        self.send_response(500)
-        self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", str(len(response_bytes)))
-        self.end_headers()
-        self.wfile.write(response_bytes)
-
-    def success(self, msg: object):
-        print(msg, file=stderr)
-        # create our own error response rather than using send_error to
-        # avoid bloating response with HTML wrapping
-        response_bytes = json.dumps(msg).encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(response_bytes)))
         self.end_headers()
@@ -50,12 +36,12 @@ class Handler(BaseHTTPRequestHandler):
             with YoutubeDL(ytdl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
 
-            self.success(ydl.sanitize_info(info))
+            self.respond(200, ydl.sanitize_info(info))
         except Exception as ex:
-            self.fail(ex)
+            self.respond(500, ex)
             return
 
-    def download_split_tracks(self, ytdl_opts, url, filename):
+    def download_split_tracks(self, ytdl_opts: dict, url: str, filename: str):
         ytdl_opts["format"] = f"bestvideo[vbr<={MAX_DOWNLOAD_BIT_RATE_KB}],bestaudio"
 
         try:
@@ -89,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
             self.warning(f"error: {str(e)}, url={url}")
             return False
 
-    def download_combined_track(self, ytdl_opts, url, filename):
+    def download_combined_track(self, ytdl_opts: dict, url: str, filename: str):
         ytdl_opts["format"] = f"best[acodec!=none][vcodec!=none][tbr<={MAX_DOWNLOAD_BIT_RATE_KB}]"
 
         try:
@@ -172,11 +158,11 @@ class Handler(BaseHTTPRequestHandler):
                 download_res = self.download_split_tracks(ydl_opts, qs["url"][0], filename)
 
             if download_res:
-                self.success(download_res)
+                self.respond(200, download_res)
             else:
-                self.fail({"message": "failed all downloads"})
+                self.respond(500, {"message": "failed all downloads"})
         else:
-            self.fail({"message": "no matching path", "url": url.path})
+            self.respond(500, {"message": "no matching path", "url": url.path})
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
