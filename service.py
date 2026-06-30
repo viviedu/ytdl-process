@@ -40,7 +40,7 @@ class Handler(BaseHTTPRequestHandler):
 
             self.respond(200, ydl.sanitize_info(info))
         except Exception as ex:
-            self.respond(500, ex)
+            self.respond(500, {"message": "ydl exception: {}".format(repr(ex))})
             return
 
     def download_split_tracks(self, ytdl_opts: dict, url: str, filename: str):
