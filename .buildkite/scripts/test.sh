@@ -2,7 +2,7 @@
 set -euo pipefail
 
 echo "--- :lint-roller: lint"
-yarn lint
+pnpm lint
 
 echo "--- :jest: test"
-yarn jest
+pnpm jest

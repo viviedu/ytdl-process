@@ -2,7 +2,7 @@ steps:
   - label: ':test_tube: Unit Tests'
     key: unit_tests
     agents:
-      queue: v3
+      queue: v6
     command: ./test.sh
     plugins:
       - docker-compose#v2.5.1:
