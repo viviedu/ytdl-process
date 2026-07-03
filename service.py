@@ -61,14 +61,13 @@ class Handler(BaseHTTPRequestHandler):
         ]
         self.debug("parsed formats", {"formats": loggable_formats})
 
-        filtered_formats = [f for f in formats if f.get("quality") is not None and MIN_DOWNLOAD_BIT_RATE_KB >= float(f.get("tbr", 0)) >= MAX_DOWNLOAD_BIT_RATE_KB]
+        filtered_formats = [f for f in formats if f.get("quality") is not None and MIN_DOWNLOAD_BIT_RATE_KB <= float(f.get("tbr", 0)) <= MAX_DOWNLOAD_BIT_RATE_KB]
         if len(filtered_formats) == 0:
             self.warning("failed to find video format that matches bitrate filters, picking best format", {"formats": loggable_formats})
             filtered_formats = [f for f in formats if f.get("quality") is not None]
 
         # The get default is set because sometimes the key is missing and other times its just equal to "none"
         video_formats = [f for f in filtered_formats if f.get("vcodec", "none") != "none"]
-        audio_formats = [f for f in filtered_formats if f.get("vcodec", "none") == "none" and f.get("acodec", "none") != "none"]
         best_video = max(video_formats, default=None, key=lambda f: f["quality"])
 
         if best_video is not None:
@@ -76,6 +75,8 @@ class Handler(BaseHTTPRequestHandler):
             yield best_video
 
             if best_video.get("acodec", "none") == "none":
+                # we don't use the format filtering for audio only because they have low bitrates
+                audio_formats = [f for f in formats if f.get("vcodec", "none") == "none" and f.get("acodec", "none") != "none"]
                 best_audio = max(audio_formats, default=None, key=lambda f: f["quality"])
                 self.debug("selected audio format", { "audio": best_audio })
                 if best_audio is not None:
@@ -92,7 +93,7 @@ class Handler(BaseHTTPRequestHandler):
             with YoutubeDL(ytdl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
 
-            self.debug("track downloaded successfully", extra_info={url: url})
+            self.debug("track downloaded successfully", extra_info={ "url": url })
             id = info["id"]
             requested_downloads = info["requested_downloads"]
 
