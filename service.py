@@ -15,7 +15,7 @@ from yt_dlp import YoutubeDL
 
 from generate_filtered_extractors import generate_filtered_extractors
 
-MAX_DOWNLOAD_BIT_RATE_KB = 8000  # 8Mbps same as in the media lambda
+MAX_DOWNLOAD_BIT_RATE_KB = 4000  # 4Mbps
 MIN_DOWNLOAD_BIT_RATE_KB = 1000  # 1Mbps
 
 
@@ -23,7 +23,7 @@ class Handler(BaseHTTPRequestHandler):
     def debug(self, msg: str, level="debug", extra_info: dict | None = None):
         log = {"message": msg, "level": level}
         if extra_info:
-            log.update(extra_info)
+            log["extra_info"] = extra_info
         print(json.dumps(log), file=stderr)
 
     def warning(self, msg: str, extra_info: dict | None = None):
