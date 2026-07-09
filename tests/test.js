@@ -108,8 +108,11 @@ test('filterVideoFormatCodecs rejects tracks with bad codecs', () => {
   expect(Boolean(filterVideoFormatCodecs(bad3))).toBe(false);
 });
 
-test('filterVideoFormatCodecs rejects video-only https tracks', () => {
-  const bad1 = { format_id: '22', vcodec: 'avc1', acodec: 'none', protocol: 'https' };
+test('filterVideoFormatCodecs allows avc1 video-only https tracks and rejects vp9/av01', () => {
+  const good1 = { format_id: '137', vcodec: 'avc1.640028', acodec: 'none', protocol: 'https' };
+  expect(Boolean(filterVideoFormatCodecs(good1))).toBe(true);
+
+  const bad1 = { format_id: '248', vcodec: 'vp9', acodec: 'none', protocol: 'https' };
   expect(Boolean(filterVideoFormatCodecs(bad1))).toBe(false);
 });
 

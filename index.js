@@ -32,7 +32,7 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
-  '--extractor-args', 'youtube:player-client=ios,web_creator,web_safari',
+  '--extractor-args', 'youtube:player-client=android_vr,web_safari,tv',
   '-J'
 ];
 
@@ -426,15 +426,12 @@ function videoTrackSort(a, b) {
 }
 
 function filterVideoFormatCodecs(format) {
-  const { acodec, format_id, protocol, vcodec } = format;
+  const { format_id, vcodec } = format;
   return format_id !== 'source' && !format_id.startsWith('http')
     // ignore tracks with no video
     && vcodec && vcodec !== 'none'
     // boxes can't play vp9 or av01
-    && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09')
-    // In our gstreamer pipeline, seeking breaks for video only tracks that have protocol=https
-    // I couldn't figure out why. Therefore we take tracks with protocol=m3u8 or protocol=dash
-    && (acodec !== 'none' || (acodec === 'none' && !protocol.includes('https')));
+    && !vcodec.includes('av01') && !vcodec.includes('vp9') && !vcodec.includes('vp09');
 }
 
 function filterVideoFormatFps(format) {
