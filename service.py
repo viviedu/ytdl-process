@@ -158,10 +158,11 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts["writeautomaticsub"] = True
             ydl_opts["writesubtitles"] = True
 
-            # by default, yt-dlp queries each url twice, once as an ios client and once as a web client. Youtube returns different tracks to
-            # different clients. We add 'web_safari' to the list, because this causes youtube to return combined 720p/1080p m3u8 tracks which
-            # are handy to have. More clients = hitting youtube more times. This option is ignored by yt-dlp for URLs that are not youtube.
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["ios", "web_creator", "web_safari"]}}
+            # web_creator now requires sign-in (fatal without cookies) and ios/web_safari only return
+            # SABR/PO-token-gated formats with no usable URL, so those clients yield nothing playable.
+            # android_vr is tokenless and still returns direct https URLs; web_safari/tv are kept as
+            # non-fatal extras (can still add HLS). This option is ignored by yt-dlp for non-youtube URLs.
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android_vr", "web_safari", "tv"]}}
             self.ytdl_request(ydl_opts, qs["url"][0])
         elif url.path == "/process_playlist":
             ydl_opts["extract_flat"] = True
