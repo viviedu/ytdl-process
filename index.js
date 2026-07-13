@@ -32,6 +32,9 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
+  // android_vr is load-bearing for seeking: it is the only client returning un-throttled (n-less)
+  // https URLs, the only ones processV4 can wrap into seekable SegmentBase manifests (see
+  // isThrottledUrl). Dropping it from this list (duplicated in service.py) silently kills seeking.
   '--extractor-args', 'youtube:player-client=android_vr,web_safari,tv',
   '-J'
 ];
@@ -39,6 +42,9 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
 module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-J'];
 
 const timescale = 48000;
+
+// Fallback advertised bandwidth when yt-dlp reports no usable tbr. Shared by both manifest generators.
+const DEFAULT_BANDWIDTH = 4382360;
 
 const generateDurationString = (totalSeconds) => {
   const secondsString = `${totalSeconds % 60}S`;
@@ -72,7 +78,7 @@ const generateManifest = (data, isAudio = false) => {
       <BaseURL><![CDATA[${fragment_base_url || ''}]]></BaseURL>
       <Period start="PT0.000S" duration="${durationString}">
         <AdaptationSet mimeType="${type}/${realExt}">
-          <Representation id="${format_id}" bandwidth="4382360">
+          <Representation id="${format_id}" bandwidth="${DEFAULT_BANDWIDTH}">
             <SegmentList timescale="${timescale}">
               ${fragments.map((fragment) => {
       const path = fragment.path.replace('&', '&amp;');
@@ -93,6 +99,67 @@ const generateManifest = (data, isAudio = false) => {
     </MPD>`
   );
 };
+
+// YouTube no longer serves segmented (m3u8 / http_dash_segments) video formats; every video
+// track is now a single-file `https` DASH URL with no `fragments`. Fed to gstreamer as a raw URL
+// (souphttpsrc ! qtdemux) these cannot be seeked: qtdemux reports seekable=true but rejects the
+// actual flushing seek in push mode. Wrapping the same URL in a `SegmentBase` manifest (init range
+// + sidx indexRange) routes it through dashdemux, which seeks via index + byte-range requests -
+// exactly how a browser seeks these streams. Verified on gstreamer 1.26 and 1.28.
+// The init (ftyp+moov) and sidx byte ranges come from YouTube's player response: yt-dlp drops
+// them, so service.py captures them at extraction time and injects them on the format dict as
+// init_range/index_range (e.g. '0-740' / '741-2248').
+// yt-dlp does not sanitize format_id/vcodec/ext, so escape them before interpolating into XML
+// attributes; a `]]>` inside the url would terminate the CDATA section early, so split it.
+const escapeXmlAttr = (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const escapeCdata = (value) => String(value).split(']]>').join(']]]]><![CDATA[>');
+
+const generateSegmentBaseManifest = ({ url, format_id, vcodec, width, height, tbr, ext, duration, init_range, index_range }) => {
+  const durationString = generateDurationString(duration);
+  const bandwidth = Math.round((tbr || 0) * 1000) || DEFAULT_BANDWIDTH;
+  const codecsAttr = vcodec && vcodec !== 'none' ? ` codecs="${escapeXmlAttr(vcodec)}"` : '';
+  const sizeAttrs = (width && height) ? ` width="${width}" height="${height}"` : '';
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>
+    <MPD
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns="urn:mpeg:dash:schema:mpd:2011"
+      profiles="urn:mpeg:dash:profile:isoff-on-demand:2011"
+      mediaPresentationDuration="${durationString}"
+      minBufferTime="PT2S"
+      type="static"
+    >
+      <Period duration="${durationString}">
+        <AdaptationSet mimeType="video/${escapeXmlAttr(ext || 'mp4')}" contentType="video" subsegmentAlignment="true">
+          <Representation id="${escapeXmlAttr(format_id)}"${codecsAttr}${sizeAttrs} bandwidth="${bandwidth}">
+            <BaseURL><![CDATA[${escapeCdata(url)}]]></BaseURL>
+            <SegmentBase indexRange="${index_range}" indexRangeExact="true">
+              <Initialization range="${init_range}"/>
+            </SegmentBase>
+          </Representation>
+        </AdaptationSet>
+      </Period>
+    </MPD>`
+  );
+};
+
+// A googlevideo URL carrying an `n` query parameter is subject to server-side throttling; these
+// URLs (from web/tv clients) also ignore deep HTTP Range requests, serving from offset 0 instead.
+// That breaks dashdemux seeking. android_vr URLs have no `n` param and honour Range requests, so
+// we can only build a seekable manifest from an un-throttled URL. Scoped to googlevideo hosts:
+// an unrelated `n` param on any other extractor's CDN says nothing about throttling.
+function isThrottledUrl(url) {
+  if (typeof url !== 'string' || !/[?&]n=/.test(url)) {
+    return false;
+  }
+  try {
+    const { hostname } = new URL(url);
+    return hostname === 'googlevideo.com' || hostname.endsWith('.googlevideo.com');
+  } catch {
+    return false;
+  }
+}
 
 module.exports.isPlaylist = (url) => {
   return url.startsWith('https://www.youtube.com/playlist?list=');
@@ -246,18 +313,37 @@ module.exports.processV4 = (output, origin, locales = []) => {
   const duration = data.duration || 0;
   const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
   const title = data.title || '';
-  const processedVideoTracks = processVideoFormats(formats, !data.duration);
+  const processedVideoTracks = processVideoFormats(formats, !data.duration, true);
   const thumbnail = data.thumbnail || '';
 
   const audioTracks = processAudioFormats(formats, true);
 
   const video_tracks = processedVideoTracks.map(formatInfo => {
+    const combined = formatInfo.acodec !== 'none';
+    const track = { height: formatInfo.height, combined, format_id: formatInfo.format_id, protocol: formatInfo.protocol };
     if (formatInfo.fragments) {
       const manifest = generateManifest({ ...formatInfo, duration });
-      return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
-    } else {
-      return { type: 'url', url: formatInfo.url, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
+      return { type: 'manifest', manifest, ...track };
     }
+
+    // Single-file `https` video-only DASH tracks are not seekable when handed to gstreamer as a
+    // raw URL (see generateSegmentBaseManifest). Wrap them in a SegmentBase manifest so they go
+    // through dashdemux instead, using the init_range/index_range byte ranges service.py injects
+    // on the format. Throttled URLs are excluded because they ignore deep Range requests (see
+    // isThrottledUrl). Tracks without ranges fall back to a plain URL track (plays, but not
+    // seekable) rather than being dropped. Combined (progressive) tracks are left as plain URLs:
+    // un-throttled ones seek via qtdemux byte-ranges; a throttled combined track cannot seek at
+    // all, but it has no seekable alternative anyway.
+    if (!combined && formatInfo.url && formatInfo.protocol && formatInfo.protocol.includes('https') && !isThrottledUrl(formatInfo.url) && formatInfo.init_range && formatInfo.index_range) {
+      const manifest = generateSegmentBaseManifest({ ...formatInfo, duration });
+      // type:'manifest' with protocol:'https' is a combination older consumers never saw (manifest
+      // tracks used to imply http_dash_segments/m3u8), so keep the plain url alongside the
+      // manifest: a box that branches on protocol rather than type can still play the raw URL
+      // (non-seekable) instead of finding neither field.
+      return { type: 'manifest', manifest, url: formatInfo.url, ...track };
+    }
+
+    return { type: 'url', url: formatInfo.url, ...track };
   });
 
   // In V4 we just return all the eligible audio tracks and let the box pick.
@@ -269,6 +355,10 @@ module.exports.processV4 = (output, origin, locales = []) => {
   //
   // Type 1 is the best. There are (very rarely) youtube videos that do not have this kind of track.
   // Just return everything and let vivi-box pick, it knows whether it's on a Vivi Display or on a physical device
+  //
+  // Note: audio url tracks are still plain push-mode URLs (no SegmentBase wrap like video above),
+  // so when the box pairs a seekable video manifest with a split audio url track, seeking depends
+  // on the audio branch tolerating the flushing seek - verify on device if split-seek misbehaves.
   const formattedTracks = audioTracks.map(audioTrack => {
     const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
     const audio_language = language || 'unknown';
@@ -328,12 +418,12 @@ function isSilentVideo(audio_bitrate) {
   return audio_bitrate && audio_bitrate <= 10;
 }
 
-function processVideoFormats(formats, isStream) {
+function processVideoFormats(formats, isStream, preferUnthrottled = false) {
   // Filter out tracks that are not suitable (see comments below)
   const filteredFormats = formats.filter((format) => filterVideoFormatCodecs(format) && filterVideoFormatFps(format));
 
   // Sort the tracks because .find will return the first match
-  filteredFormats.sort(videoTrackSort);
+  filteredFormats.sort(makeVideoTrackSort(preferUnthrottled));
 
   // If you change track selection, then all permutations of the following should ideally be tested:
   //    - signage, play content
@@ -373,57 +463,79 @@ function processVideoFormats(formats, isStream) {
 // Return > 0 if b is preferred
 // Return < 0 if a is preferred
 // Never return 0, we want track selection to be deterministic!
-function videoTrackSort(a, b) {
-  // Prefer English audio
-  const englishAudioTag = 'original:lang%3Den';
-  if ((a.url && a.url.includes(englishAudioTag)) && !(b.url && b.url.includes(englishAudioTag))) {
-    return -1;
-  }
-  if (!(a.url && a.url.includes(englishAudioTag)) && (b.url && b.url.includes(englishAudioTag))) {
-    return 1;
-  }
-
-  // Prefer tracks with higher resolution
-  if (a.height !== b.height) {
-    return b.height - a.height;
-  }
-  
-  // Prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
-  if (!a.protocol.includes('dash') && b.protocol.includes('dash')) {
-    return -1;
-  }
-  if (a.protocol.includes('dash') && !b.protocol.includes('dash')) {
-    return 1;
-  }
-
-  // Then prefer combined tracks over video-only tracks
-  if (a.acodec !== 'none' && b.acodec === 'none') {
-    return -1;
-  }
-  if (a.acodec === 'none' && b.acodec !== 'none') {
-    return 1;
-  }
-
-  if (a.format_id.includes('akfire_interconnect') || a.format_id.includes('fastly_skyfire')) {
-    // Vimeo video!
-    // If one has 'sep' in the format_id and one does not, we take the one with 'sep' in its format_id
-    // VIVI-12238: video tracks that don't have '_sep' in its format_id are sometimes failing, reasons unknown
-    if (a.format_id.includes('_sep') && !b.format_id.includes('_sep')) {
+//
+// preferUnthrottled is V4-only: preferring the un-throttled variant of a resolution lets that
+// resolution be served as a seekable SegmentBase manifest (throttled URLs ignore deep byte-range
+// requests, see isThrottledUrl). V3 never builds those manifests and must keep its historical
+// selection (lower bitrate wins), so the flag stays off for it.
+function makeVideoTrackSort(preferUnthrottled = false) {
+  return function videoTrackSort(a, b) {
+    // Prefer English audio
+    const englishAudioTag = 'original:lang%3Den';
+    if ((a.url && a.url.includes(englishAudioTag)) && !(b.url && b.url.includes(englishAudioTag))) {
       return -1;
     }
-    if (!a.format_id.includes('_sep') && b.format_id.includes('_sep')) {
+    if (!(a.url && a.url.includes(englishAudioTag)) && (b.url && b.url.includes(englishAudioTag))) {
       return 1;
     }
-  }
 
-  // Then prefer lower total bit rate
-  if (a.tbr != b.tbr) {
-    return a.tbr - b.tbr;
-  }
+    // Prefer tracks with higher resolution
+    if (a.height !== b.height) {
+      return b.height - a.height;
+    }
 
-  // Sort on format_id, which is guaranteed to be unique per track
-  return a.format_id < b.format_id ? -1 : 1;
+    // Only compared between plain https tracks: manifest urls (m3u8/dash) never carry the n param,
+    // so without this guard they would always win the throttle comparison.
+    if (preferUnthrottled && a.protocol.includes('https') && b.protocol.includes('https')) {
+      const aThrottled = isThrottledUrl(a.url);
+      const bThrottled = isThrottledUrl(b.url);
+      if (!aThrottled && bThrottled) {
+        return -1;
+      }
+      if (aThrottled && !bThrottled) {
+        return 1;
+      }
+    }
+
+    // Prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
+    if (!a.protocol.includes('dash') && b.protocol.includes('dash')) {
+      return -1;
+    }
+    if (a.protocol.includes('dash') && !b.protocol.includes('dash')) {
+      return 1;
+    }
+
+    // Then prefer combined tracks over video-only tracks
+    if (a.acodec !== 'none' && b.acodec === 'none') {
+      return -1;
+    }
+    if (a.acodec === 'none' && b.acodec !== 'none') {
+      return 1;
+    }
+
+    if (a.format_id.includes('akfire_interconnect') || a.format_id.includes('fastly_skyfire')) {
+      // Vimeo video!
+      // If one has 'sep' in the format_id and one does not, we take the one with 'sep' in its format_id
+      // VIVI-12238: video tracks that don't have '_sep' in its format_id are sometimes failing, reasons unknown
+      if (a.format_id.includes('_sep') && !b.format_id.includes('_sep')) {
+        return -1;
+      }
+      if (!a.format_id.includes('_sep') && b.format_id.includes('_sep')) {
+        return 1;
+      }
+    }
+
+    // Then prefer lower total bit rate
+    if (a.tbr != b.tbr) {
+      return a.tbr - b.tbr;
+    }
+
+    // Sort on format_id, which is guaranteed to be unique per track
+    return a.format_id < b.format_id ? -1 : 1;
+  };
 }
+
+const videoTrackSort = makeVideoTrackSort();
 
 function filterVideoFormatCodecs(format) {
   const { format_id, vcodec } = format;
@@ -544,7 +656,10 @@ function getSubtitlesForAllLocales(origin, subtitles, automatic_captions, useEmp
 
 module.exports._private_testing = {
   generateDurationString,
+  generateSegmentBaseManifest,
+  isThrottledUrl,
   audioTrackSort,
+  makeVideoTrackSort,
   videoTrackSort,
   filterVideoFormatCodecs,
   filterAudioFormatCodecs

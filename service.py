@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from sys import stderr
@@ -17,6 +18,77 @@ from generate_filtered_extractors import generate_filtered_extractors
 
 MAX_DOWNLOAD_BIT_RATE_KB = 4000  # 4Mbps
 MIN_DOWNLOAD_BIT_RATE_KB = 1000  # 1Mbps
+
+# Requests are handled on separate threads (ThreadingHTTPServer), so captured byte ranges live in
+# a thread-local slot: set to a fresh dict for the duration of each /process extraction, None otherwise.
+_captured_ranges = threading.local()
+
+
+def collect_byte_ranges(player_responses, ranges: dict) -> None:
+    """Collect itag -> (init_range, index_range) pairs from raw YouTube player responses.
+
+    yt-dlp drops streamingData.adaptiveFormats[].initRange/indexRange when it builds its format
+    dicts, but the javascript side needs them to build seekable SegmentBase manifests (see
+    generateSegmentBaseManifest in index.js). First client wins: an itag is a single encode, so
+    the ranges are interchangeable between clients.
+    """
+    for player_response in player_responses or []:
+        streaming_data = (player_response or {}).get("streamingData") or {}
+        for f in streaming_data.get("adaptiveFormats") or []:
+            itag = f.get("itag")
+            init_range = f.get("initRange") or {}
+            index_range = f.get("indexRange") or {}
+            if itag is None or not init_range or not index_range:
+                continue
+            ranges.setdefault(str(itag), (f"{init_range.get('start')}-{init_range.get('end')}", f"{index_range.get('start')}-{index_range.get('end')}"))
+
+
+def inject_byte_ranges(info, ranges: dict) -> None:
+    """Attach captured byte ranges to matching single-file https formats as init_range/index_range.
+
+    format_id for YouTube's DASH formats is the itag, suffixed (e.g. '299-1') when several clients
+    return the same itag. Segmented protocols (m3u8/http_dash_segments) are skipped: byte ranges
+    only make sense for single-file formats.
+    """
+    if not info or not ranges:
+        return
+    for f in info.get("formats") or []:
+        if f.get("protocol") != "https":
+            continue
+        pair = ranges.get(str(f.get("format_id", "")).split("-")[0])
+        if pair:
+            f["init_range"], f["index_range"] = pair
+
+
+def _install_byte_range_capture():
+    """Wrap YoutubeIE._extract_player_responses to capture raw player responses per request.
+
+    This is a private yt-dlp method: re-check its signature when bumping yt-dlp (verified identical
+    on 2026.6.9 and 2026.7.4). If the wrap fails we only lose seekable manifests (the javascript
+    side falls back to plain URL tracks); extraction itself keeps working.
+    """
+    try:
+        from yt_dlp.extractor.youtube import YoutubeIE
+
+        original = YoutubeIE._extract_player_responses
+
+        def wrapper(self, *args, **kwargs):
+            result = original(self, *args, **kwargs)
+            ranges = getattr(_captured_ranges, "ranges", None)
+            if ranges is not None:
+                try:
+                    collect_byte_ranges(result[0], ranges)
+                except Exception:
+                    pass  # best-effort: never break extraction
+            return result
+
+        # signature-agnostic on purpose so minor yt-dlp signature drift doesn't break the wrap
+        YoutubeIE._extract_player_responses = wrapper  # ty: ignore[invalid-assignment]
+    except Exception as ex:
+        print(json.dumps({"message": f"byte-range capture unavailable: {ex!r}", "level": "warning"}), file=stderr)
+
+
+_install_byte_range_capture()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -43,14 +115,18 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(response_bytes)
 
     def ytdl_request(self, ytdl_opts, url):
+        _captured_ranges.ranges = {}
         try:
             with YoutubeDL(ytdl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
 
+            inject_byte_ranges(info, _captured_ranges.ranges)
             self.respond(200, ydl.sanitize_info(info))
         except Exception as ex:
             self.respond(500, {"message": "ydl exception: {}".format(repr(ex))})
             return
+        finally:
+            _captured_ranges.ranges = None
 
     def _ytdl_format_selector(self, ctx: Any):
         formats: list[dict[str, Any]] = ctx.get("formats", [])
@@ -162,6 +238,9 @@ class Handler(BaseHTTPRequestHandler):
             # SABR/PO-token-gated formats with no usable URL, so those clients yield nothing playable.
             # android_vr is tokenless and still returns direct https URLs; web_safari/tv are kept as
             # non-fatal extras (can still add HLS). This option is ignored by yt-dlp for non-youtube URLs.
+            # android_vr is also load-bearing for seeking: it is the only client whose URLs carry no
+            # `n` throttle param, the only ones index.js can wrap into seekable SegmentBase manifests
+            # (see isThrottledUrl in index.js). Dropping it silently kills seeking in the field.
             ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android_vr", "web_safari", "tv"]}}
             self.ytdl_request(ydl_opts, qs["url"][0])
         elif url.path == "/process_playlist":
