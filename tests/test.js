@@ -3,7 +3,7 @@ const { _private_testing, processV4 } = require('./../index');
 const filterVideoFormatCodecs = _private_testing.filterVideoFormatCodecs;
 const filterAudioFormatCodecs = _private_testing.filterAudioFormatCodecs;
 const generateDurationString = _private_testing.generateDurationString;
-const generateSegmentBaseManifest = _private_testing.generateSegmentBaseManifest;
+const generateSegmentListManifest = _private_testing.generateSegmentListManifest;
 const isThrottledUrl = _private_testing.isThrottledUrl;
 const makeVideoTrackSort = _private_testing.makeVideoTrackSort;
 const videoTrackSort = _private_testing.videoTrackSort;
@@ -234,9 +234,9 @@ test('the un-throttled preference only applies between plain https tracks', () =
   expect([hls, throttledHttps].sort(v4Sort)[0]).toBe(throttledHttps);
 });
 
-test('generateSegmentBaseManifest emits a SegmentBase manifest with the injected byte ranges', () => {
-  const manifest = generateSegmentBaseManifest({
-    url: 'https://example.googlevideo.com/videoplayback?itag=134&a=b',
+test('generateSegmentListManifest emits a SegmentList with init + media byte ranges, query preserved', () => {
+  const manifest = generateSegmentListManifest({
+    url: 'https://example.googlevideo.com/videoplayback?itag=134&clen=1000&a=b',
     format_id: '134',
     vcodec: 'avc1.4d401e',
     width: 426,
@@ -244,49 +244,51 @@ test('generateSegmentBaseManifest emits a SegmentBase manifest with the injected
     tbr: 118,
     ext: 'mp4',
     duration: 634,
-    init_range: '0-740',
-    index_range: '741-2248'
+    init_range: '0-740'
   });
 
-  expect(manifest).toContain('<SegmentBase indexRange="741-2248" indexRangeExact="true">');
-  expect(manifest).toContain('<Initialization range="0-740"/>');
+  expect(manifest).toContain('<SegmentList');
+  // init = ftyp+moov (from init_range); media = just after it to clen-1
+  expect(manifest).toContain('range="0-740"');
+  expect(manifest).toContain('mediaRange="741-999"');
+  // the full query MUST survive (old dashdemux drops <BaseURL> queries; this path keeps them),
+  // xml-escaped inside the attribute
+  expect(manifest).toContain('sourceURL="https://example.googlevideo.com/videoplayback?itag=134&amp;clen=1000&amp;a=b"');
+  expect(manifest).toContain('media="https://example.googlevideo.com/videoplayback?itag=134&amp;clen=1000&amp;a=b"');
   expect(manifest).toContain('codecs="avc1.4d401e"');
   expect(manifest).toContain('width="426" height="240"');
   expect(manifest).toContain('bandwidth="118000"');
-  expect(manifest).toContain('<![CDATA[https://example.googlevideo.com/videoplayback?itag=134&a=b]]>');
   expect(manifest).toContain('type="static"');
+});
+
+test('generateSegmentListManifest falls back to a sentinel media end when clen is absent', () => {
+  const manifest = generateSegmentListManifest({
+    url: 'https://example.googlevideo.com/videoplayback?itag=134',
+    format_id: '134',
+    tbr: 100,
+    ext: 'mp4',
+    duration: 60,
+    init_range: '0-740'
+  });
+  expect(manifest).toContain('mediaRange="741-9999999999"');
 });
 
 // yt-dlp does not sanitize format_id/vcodec (non-youtube extractors can carry xml-special
 // characters in them); unescaped they would make the MPD non-well-formed and dashdemux rejects it
-test('generateSegmentBaseManifest escapes xml-special characters in attributes', () => {
-  const manifest = generateSegmentBaseManifest({
-    url: 'https://cdn.example.com/v.mp4',
+test('generateSegmentListManifest escapes xml-special characters in attributes', () => {
+  const manifest = generateSegmentListManifest({
+    url: 'https://cdn.example.com/v.mp4?a=1&b=2',
     format_id: 'hls&<">-1',
     vcodec: 'avc1"x',
     tbr: 100,
     ext: 'mp4',
     duration: 60,
-    init_range: '0-740',
-    index_range: '741-2248'
+    init_range: '0-740'
   });
   expect(manifest).toContain('id="hls&amp;&lt;&quot;&gt;-1"');
   expect(manifest).toContain('codecs="avc1&quot;x"');
-});
-
-test('generateSegmentBaseManifest guards the CDATA url against "]]>"', () => {
-  const manifest = generateSegmentBaseManifest({
-    url: 'https://cdn.example.com/v.mp4?sig=xx]]>yy',
-    format_id: '134',
-    tbr: 100,
-    ext: 'mp4',
-    duration: 60,
-    init_range: '0-740',
-    index_range: '741-2248'
-  });
-  // the raw sequence must not terminate the CDATA section early; the standard fix splits it
-  expect(manifest).not.toContain('xx]]>yy');
-  expect(manifest).toContain(']]]]><![CDATA[>');
+  // the `&` in the url is escaped in the attribute (and never appears raw)
+  expect(manifest).toContain('media="https://cdn.example.com/v.mp4?a=1&amp;b=2"');
 });
 
 // processV4 builds seekable SegmentBase manifests from the init_range/index_range byte ranges
@@ -310,12 +312,13 @@ function makeYtdlOutput(formats) {
   return JSON.stringify({ duration: 634, title: 'test video', formats, subtitles: {}, automatic_captions: {} });
 }
 
-test('processV4 synchronously builds a SegmentBase manifest track from injected byte ranges', () => {
+test('processV4 synchronously builds a SegmentList manifest track from injected byte ranges', () => {
   const result = processV4(makeYtdlOutput([seekableFormat]), '');
   expect(result.video).toHaveLength(1);
   expect(result.video[0].type).toBe('manifest');
-  expect(result.video[0].manifest).toContain('<SegmentBase indexRange="741-2248" indexRangeExact="true">');
-  expect(result.video[0].manifest).toContain('<Initialization range="0-740"/>');
+  expect(result.video[0].manifest).toContain('<SegmentList');
+  expect(result.video[0].manifest).toContain('range="0-740"');
+  expect(result.video[0].manifest).toContain('<SegmentURL media=');
   // protocol stays 'https' on a manifest track (a combination older consumers never saw), so the
   // plain url is kept alongside the manifest: a box branching on protocol can still play something
   expect(result.video[0].url).toBe(seekableFormat.url);

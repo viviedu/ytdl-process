@@ -112,13 +112,33 @@ const generateManifest = (data, isAudio = false) => {
 // yt-dlp does not sanitize format_id/vcodec/ext, so escape them before interpolating into XML
 // attributes; a `]]>` inside the url would terminate the CDATA section early, so split it.
 const escapeXmlAttr = (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const escapeCdata = (value) => String(value).split(']]>').join(']]]]><![CDATA[>');
+// googlevideo URLs carry the file's total size as `clen`; we need it for the media byte range end.
+const parseContentLength = (url) => {
+  const match = /[?&]clen=(\d+)/.exec(url || '');
+  return match ? parseInt(match[1], 10) : null;
+};
+// If clen is missing we still need a finite end: googlevideo answers an over-long range with a 206
+// clamped to the real length, so a large sentinel is safe.
+const SEGMENT_END_SENTINEL = 9999999999;
 
-const generateSegmentBaseManifest = ({ url, format_id, vcodec, width, height, tbr, ext, duration, init_range, index_range }) => {
+// IMPORTANT: this uses a single-segment SegmentList, NOT SegmentBase/BaseURL. The boxes' uridecodebin3
+// autoplugs the OLD `dashdemux` (gstmpdparser), which DROPS the query string from <BaseURL> during
+// URI resolution. YouTube URLs are entirely query (signature/itag/expire), so a stripped BaseURL
+// 404s and the video never starts. Putting the full url in SegmentURL `media`/`sourceURL` attributes
+// goes through a different parser path that preserves the query. Seeking still works: the sidx sits
+// at the front of the media range, so qtdemux issues byte-range requests off it. Verified on
+// gstreamer 1.20 (old dashdemux). init_range (ftyp+moov) comes from service.py; the media range runs
+// from just after it to the end of the file.
+const generateSegmentListManifest = ({ url, format_id, vcodec, width, height, tbr, ext, duration, init_range }) => {
   const durationString = generateDurationString(duration);
   const bandwidth = Math.round((tbr || 0) * 1000) || DEFAULT_BANDWIDTH;
   const codecsAttr = vcodec && vcodec !== 'none' ? ` codecs="${escapeXmlAttr(vcodec)}"` : '';
   const sizeAttrs = (width && height) ? ` width="${width}" height="${height}"` : '';
+  const initEnd = parseInt(String(init_range).split('-')[1], 10);
+  const mediaStart = Number.isFinite(initEnd) ? initEnd + 1 : 0;
+  const clen = parseContentLength(url);
+  const mediaEnd = clen ? clen - 1 : SEGMENT_END_SENTINEL;
+  const urlAttr = escapeXmlAttr(url);
 
   return (
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -133,10 +153,10 @@ const generateSegmentBaseManifest = ({ url, format_id, vcodec, width, height, tb
       <Period duration="${durationString}">
         <AdaptationSet mimeType="video/${escapeXmlAttr(ext || 'mp4')}" contentType="video" subsegmentAlignment="true">
           <Representation id="${escapeXmlAttr(format_id)}"${codecsAttr}${sizeAttrs} bandwidth="${bandwidth}">
-            <BaseURL><![CDATA[${escapeCdata(url)}]]></BaseURL>
-            <SegmentBase indexRange="${index_range}" indexRangeExact="true">
-              <Initialization range="${init_range}"/>
-            </SegmentBase>
+            <SegmentList duration="${Math.max(1, Math.round(duration))}">
+              <Initialization sourceURL="${urlAttr}" range="${init_range}"/>
+              <SegmentURL media="${urlAttr}" mediaRange="${mediaStart}-${mediaEnd}"/>
+            </SegmentList>
           </Representation>
         </AdaptationSet>
       </Period>
@@ -327,15 +347,15 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
 
     // Single-file `https` video-only DASH tracks are not seekable when handed to gstreamer as a
-    // raw URL (see generateSegmentBaseManifest). Wrap them in a SegmentBase manifest so they go
-    // through dashdemux instead, using the init_range/index_range byte ranges service.py injects
-    // on the format. Throttled URLs are excluded because they ignore deep Range requests (see
-    // isThrottledUrl). Tracks without ranges fall back to a plain URL track (plays, but not
-    // seekable) rather than being dropped. Combined (progressive) tracks are left as plain URLs:
-    // un-throttled ones seek via qtdemux byte-ranges; a throttled combined track cannot seek at
-    // all, but it has no seekable alternative anyway.
+    // raw URL. Wrap them in a SegmentList manifest so they go through dashdemux instead, using the
+    // init_range byte range service.py injects on the format (see generateSegmentListManifest for
+    // why SegmentList rather than SegmentBase). Throttled URLs are excluded because they ignore deep
+    // Range requests (see isThrottledUrl). Tracks without ranges fall back to a plain URL track
+    // (plays, but not seekable) rather than being dropped. Combined (progressive) tracks are left as
+    // plain URLs: un-throttled ones seek via qtdemux byte-ranges; a throttled combined track cannot
+    // seek at all, but it has no seekable alternative anyway.
     if (!combined && formatInfo.url && formatInfo.protocol && formatInfo.protocol.includes('https') && !isThrottledUrl(formatInfo.url) && formatInfo.init_range && formatInfo.index_range) {
-      const manifest = generateSegmentBaseManifest({ ...formatInfo, duration });
+      const manifest = generateSegmentListManifest({ ...formatInfo, duration });
       // type:'manifest' with protocol:'https' is a combination older consumers never saw (manifest
       // tracks used to imply http_dash_segments/m3u8), so keep the plain url alongside the
       // manifest: a box that branches on protocol rather than type can still play the raw URL
@@ -656,7 +676,7 @@ function getSubtitlesForAllLocales(origin, subtitles, automatic_captions, useEmp
 
 module.exports._private_testing = {
   generateDurationString,
-  generateSegmentBaseManifest,
+  generateSegmentListManifest,
   isThrottledUrl,
   audioTrackSort,
   makeVideoTrackSort,
