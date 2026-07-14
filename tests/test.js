@@ -291,7 +291,7 @@ test('generateSegmentListManifest escapes xml-special characters in attributes',
   expect(manifest).toContain('media="https://cdn.example.com/v.mp4?a=1&amp;b=2"');
 });
 
-// processV4 builds seekable SegmentBase manifests from the init_range/index_range byte ranges
+// processV4 builds seekable SegmentList manifests from the init_range/index_range byte ranges
 // that service.py captures out of YouTube's player response (yt-dlp itself drops them).
 // No ranges (or a throttled/combined track) means a plain url track - never a probe, never async.
 const seekableFormat = {

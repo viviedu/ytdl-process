@@ -19,8 +19,8 @@ from generate_filtered_extractors import generate_filtered_extractors
 MAX_DOWNLOAD_BIT_RATE_KB = 4000  # 4Mbps
 MIN_DOWNLOAD_BIT_RATE_KB = 1000  # 1Mbps
 
-# Requests are handled on separate threads (ThreadingHTTPServer), so captured byte ranges live in
-# a thread-local slot: set to a fresh dict for the duration of each /process extraction, None otherwise.
+# Each request is handled on its own thread, so captured ranges live in a thread-local: a fresh dict
+# for the duration of each /process extraction, None otherwise.
 _captured_ranges = threading.local()
 
 
@@ -28,9 +28,8 @@ def collect_byte_ranges(player_responses, ranges: dict) -> None:
     """Collect itag -> (init_range, index_range) pairs from raw YouTube player responses.
 
     yt-dlp drops streamingData.adaptiveFormats[].initRange/indexRange when it builds its format
-    dicts, but the javascript side needs them to build seekable SegmentBase manifests (see
-    generateSegmentBaseManifest in index.js). First client wins: an itag is a single encode, so
-    the ranges are interchangeable between clients.
+    dicts, but index.js needs them to build seekable manifests. First client wins: an itag is a
+    single encode, so the ranges are interchangeable between clients.
     """
     for player_response in player_responses or []:
         streaming_data = (player_response or {}).get("streamingData") or {}
@@ -63,9 +62,8 @@ def inject_byte_ranges(info, ranges: dict) -> None:
 def _install_byte_range_capture():
     """Wrap YoutubeIE._extract_player_responses to capture raw player responses per request.
 
-    This is a private yt-dlp method: re-check its signature when bumping yt-dlp (verified identical
-    on 2026.6.9 and 2026.7.4). If the wrap fails we only lose seekable manifests (the javascript
-    side falls back to plain URL tracks); extraction itself keeps working.
+    Private yt-dlp method: re-check its signature on upgrade (verified on 2026.6.9 and 2026.7.4).
+    If the wrap fails we only lose seekable manifests; extraction itself keeps working.
     """
     try:
         from yt_dlp.extractor.youtube import YoutubeIE
@@ -238,9 +236,8 @@ class Handler(BaseHTTPRequestHandler):
             # SABR/PO-token-gated formats with no usable URL, so those clients yield nothing playable.
             # android_vr is tokenless and still returns direct https URLs; web_safari/tv are kept as
             # non-fatal extras (can still add HLS). This option is ignored by yt-dlp for non-youtube URLs.
-            # android_vr is also load-bearing for seeking: it is the only client whose URLs carry no
-            # `n` throttle param, the only ones index.js can wrap into seekable SegmentBase manifests
-            # (see isThrottledUrl in index.js). Dropping it silently kills seeking in the field.
+            # android_vr is also load-bearing for seeking: only its (n-less) URLs can be wrapped into
+            # a seekable manifest by index.js (see isThrottledUrl). Dropping it silently kills seeking.
             ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android_vr", "web_safari", "tv"]}}
             self.ytdl_request(ydl_opts, qs["url"][0])
         elif url.path == "/process_playlist":

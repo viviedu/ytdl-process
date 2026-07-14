@@ -32,9 +32,6 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
-  // android_vr is load-bearing for seeking: it is the only client returning un-throttled (n-less)
-  // https URLs, the only ones processV4 can wrap into seekable SegmentBase manifests (see
-  // isThrottledUrl). Dropping it from this list (duplicated in service.py) silently kills seeking.
   '--extractor-args', 'youtube:player-client=android_vr,web_safari,tv',
   '-J'
 ];
@@ -43,7 +40,7 @@ module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-J'];
 
 const timescale = 48000;
 
-// Fallback advertised bandwidth when yt-dlp reports no usable tbr. Shared by both manifest generators.
+// Fallback bandwidth when yt-dlp reports no usable tbr.
 const DEFAULT_BANDWIDTH = 4382360;
 
 const generateDurationString = (totalSeconds) => {
@@ -100,35 +97,22 @@ const generateManifest = (data, isAudio = false) => {
   );
 };
 
-// YouTube no longer serves segmented (m3u8 / http_dash_segments) video formats; every video
-// track is now a single-file `https` DASH URL with no `fragments`. Fed to gstreamer as a raw URL
-// (souphttpsrc ! qtdemux) these cannot be seeked: qtdemux reports seekable=true but rejects the
-// actual flushing seek in push mode. Wrapping the same URL in a `SegmentBase` manifest (init range
-// + sidx indexRange) routes it through dashdemux, which seeks via index + byte-range requests -
-// exactly how a browser seeks these streams. Verified on gstreamer 1.26 and 1.28.
-// The init (ftyp+moov) and sidx byte ranges come from YouTube's player response: yt-dlp drops
-// them, so service.py captures them at extraction time and injects them on the format dict as
-// init_range/index_range (e.g. '0-740' / '741-2248').
-// yt-dlp does not sanitize format_id/vcodec/ext, so escape them before interpolating into XML
-// attributes; a `]]>` inside the url would terminate the CDATA section early, so split it.
+// yt-dlp does not sanitize format_id/vcodec/ext/url, so escape them before interpolating into XML attributes.
 const escapeXmlAttr = (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-// googlevideo URLs carry the file's total size as `clen`; we need it for the media byte range end.
+// googlevideo URLs carry the file's total size in `clen`; used as the media byte-range end.
 const parseContentLength = (url) => {
   const match = /[?&]clen=(\d+)/.exec(url || '');
   return match ? parseInt(match[1], 10) : null;
 };
-// If clen is missing we still need a finite end: googlevideo answers an over-long range with a 206
-// clamped to the real length, so a large sentinel is safe.
+// Fallback media-range end when clen is absent; googlevideo clamps an over-long range to the real length.
 const SEGMENT_END_SENTINEL = 9999999999;
 
-// IMPORTANT: this uses a single-segment SegmentList, NOT SegmentBase/BaseURL. The boxes' uridecodebin3
-// autoplugs the OLD `dashdemux` (gstmpdparser), which DROPS the query string from <BaseURL> during
-// URI resolution. YouTube URLs are entirely query (signature/itag/expire), so a stripped BaseURL
-// 404s and the video never starts. Putting the full url in SegmentURL `media`/`sourceURL` attributes
-// goes through a different parser path that preserves the query. Seeking still works: the sidx sits
-// at the front of the media range, so qtdemux issues byte-range requests off it. Verified on
-// gstreamer 1.20 (old dashdemux). init_range (ftyp+moov) comes from service.py; the media range runs
-// from just after it to the end of the file.
+// YouTube video tracks are now single-file `https` URLs with no fragments; gstreamer can't seek them
+// as a raw URL (qtdemux rejects the flushing seek in push mode). Wrapping in a DASH manifest routes
+// them through dashdemux, which seeks via byte-range requests. Uses a single-segment SegmentList, not
+// SegmentBase/BaseURL: the box's legacy dashdemux drops the query string from <BaseURL>, and YouTube
+// URLs are all query, so a stripped BaseURL 404s. The full url in SegmentURL attributes preserves it.
+// Seeking works because the sidx sits at the front of the media range. init_range comes from service.py.
 const generateSegmentListManifest = ({ url, format_id, vcodec, width, height, tbr, ext, duration, init_range }) => {
   const durationString = generateDurationString(duration);
   const bandwidth = Math.round((tbr || 0) * 1000) || DEFAULT_BANDWIDTH;
@@ -164,11 +148,9 @@ const generateSegmentListManifest = ({ url, format_id, vcodec, width, height, tb
   );
 };
 
-// A googlevideo URL carrying an `n` query parameter is subject to server-side throttling; these
-// URLs (from web/tv clients) also ignore deep HTTP Range requests, serving from offset 0 instead.
-// That breaks dashdemux seeking. android_vr URLs have no `n` param and honour Range requests, so
-// we can only build a seekable manifest from an un-throttled URL. Scoped to googlevideo hosts:
-// an unrelated `n` param on any other extractor's CDN says nothing about throttling.
+// Throttled googlevideo URLs (those with an `n` param, from web/tv clients) ignore deep Range requests
+// and serve from offset 0, which breaks seeking - so we only wrap un-throttled (android_vr) URLs.
+// Scoped to googlevideo: an `n` param on another CDN says nothing about throttling.
 function isThrottledUrl(url) {
   if (typeof url !== 'string' || !/[?&]n=/.test(url)) {
     return false;
@@ -346,20 +328,14 @@ module.exports.processV4 = (output, origin, locales = []) => {
       return { type: 'manifest', manifest, ...track };
     }
 
-    // Single-file `https` video-only DASH tracks are not seekable when handed to gstreamer as a
-    // raw URL. Wrap them in a SegmentList manifest so they go through dashdemux instead, using the
-    // init_range byte range service.py injects on the format (see generateSegmentListManifest for
-    // why SegmentList rather than SegmentBase). Throttled URLs are excluded because they ignore deep
-    // Range requests (see isThrottledUrl). Tracks without ranges fall back to a plain URL track
-    // (plays, but not seekable) rather than being dropped. Combined (progressive) tracks are left as
-    // plain URLs: un-throttled ones seek via qtdemux byte-ranges; a throttled combined track cannot
-    // seek at all, but it has no seekable alternative anyway.
+    // Wrap single-file https video-only tracks in a SegmentList manifest so they seek via dashdemux
+    // (see generateSegmentListManifest). Throttled URLs are excluded (they ignore Range, see
+    // isThrottledUrl); tracks without ranges fall back to a plain, non-seekable url. Combined tracks
+    // stay plain urls - un-throttled ones seek via qtdemux, throttled ones have no seekable form.
     if (!combined && formatInfo.url && formatInfo.protocol && formatInfo.protocol.includes('https') && !isThrottledUrl(formatInfo.url) && formatInfo.init_range && formatInfo.index_range) {
       const manifest = generateSegmentListManifest({ ...formatInfo, duration });
-      // type:'manifest' with protocol:'https' is a combination older consumers never saw (manifest
-      // tracks used to imply http_dash_segments/m3u8), so keep the plain url alongside the
-      // manifest: a box that branches on protocol rather than type can still play the raw URL
-      // (non-seekable) instead of finding neither field.
+      // Keep the plain url alongside the manifest: type:'manifest' + protocol:'https' is new, so a
+      // consumer that branches on protocol can still fall back to the (non-seekable) url.
       return { type: 'manifest', manifest, url: formatInfo.url, ...track };
     }
 
@@ -375,10 +351,6 @@ module.exports.processV4 = (output, origin, locales = []) => {
   //
   // Type 1 is the best. There are (very rarely) youtube videos that do not have this kind of track.
   // Just return everything and let vivi-box pick, it knows whether it's on a Vivi Display or on a physical device
-  //
-  // Note: audio url tracks are still plain push-mode URLs (no SegmentBase wrap like video above),
-  // so when the box pairs a seekable video manifest with a split audio url track, seeking depends
-  // on the audio branch tolerating the flushing seek - verify on device if split-seek misbehaves.
   const formattedTracks = audioTracks.map(audioTrack => {
     const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
     const audio_language = language || 'unknown';
@@ -484,10 +456,8 @@ function processVideoFormats(formats, isStream, preferUnthrottled = false) {
 // Return < 0 if a is preferred
 // Never return 0, we want track selection to be deterministic!
 //
-// preferUnthrottled is V4-only: preferring the un-throttled variant of a resolution lets that
-// resolution be served as a seekable SegmentBase manifest (throttled URLs ignore deep byte-range
-// requests, see isThrottledUrl). V3 never builds those manifests and must keep its historical
-// selection (lower bitrate wins), so the flag stays off for it.
+// preferUnthrottled is V4-only: it prefers the un-throttled variant of a resolution so it can be
+// served as a seekable manifest (see isThrottledUrl). V3 keeps its historical selection (lower bitrate).
 function makeVideoTrackSort(preferUnthrottled = false) {
   return function videoTrackSort(a, b) {
     // Prefer English audio
