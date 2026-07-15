@@ -76,14 +76,14 @@ def _install_byte_range_capture():
             if ranges is not None:
                 try:
                     collect_byte_ranges(result[0], ranges)
-                except Exception:
-                    pass  # best-effort: never break extraction
+                except Exception as ex:
+                    self.report_warning(f"byte-range capture failed: {ex!r}")
             return result
 
         # signature-agnostic on purpose so minor yt-dlp signature drift doesn't break the wrap
         YoutubeIE._extract_player_responses = wrapper  # ty: ignore[invalid-assignment]
     except Exception as ex:
-        print(json.dumps({"message": f"byte-range capture unavailable: {ex!r}", "level": "warning"}), file=stderr)
+        print(json.dumps({"message": "byte-range capture unavailable", "level": "warning", "extra_info": {"error": repr(ex)}}), file=stderr)
 
 
 _install_byte_range_capture()
