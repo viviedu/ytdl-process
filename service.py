@@ -89,6 +89,7 @@ def _install_byte_range_capture():
 
 _install_byte_range_capture()
 
+
 class Handler(BaseHTTPRequestHandler):
     def debug(self, msg: str, level="debug", extra_info: dict | None = None):
         log = {"message": msg, "level": level}
@@ -119,7 +120,7 @@ class Handler(BaseHTTPRequestHandler):
                 info = ydl.extract_info(url, download=False)
 
             inject_byte_ranges(info, _captured_ranges.ranges)
-            # fallback: fills only formats the capture missed - zero fetches when injection covered everything
+            # fallback: probes only formats the capture missed (no fetches when it missed none)
             probe_byte_ranges(info, ytdl_opts.get("proxy"))
             self.respond(200, ydl.sanitize_info(info))
         except Exception as ex:
