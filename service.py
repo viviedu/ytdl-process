@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 from yt_dlp import YoutubeDL
 
 from generate_filtered_extractors import generate_filtered_extractors
+from sidx_probe import probe_byte_ranges
 
 MAX_DOWNLOAD_BIT_RATE_KB = 4000  # 4Mbps
 MIN_DOWNLOAD_BIT_RATE_KB = 1000  # 1Mbps
@@ -88,7 +89,6 @@ def _install_byte_range_capture():
 
 _install_byte_range_capture()
 
-
 class Handler(BaseHTTPRequestHandler):
     def debug(self, msg: str, level="debug", extra_info: dict | None = None):
         log = {"message": msg, "level": level}
@@ -119,6 +119,8 @@ class Handler(BaseHTTPRequestHandler):
                 info = ydl.extract_info(url, download=False)
 
             inject_byte_ranges(info, _captured_ranges.ranges)
+            # fallback: fills only formats the capture missed - zero fetches when injection covered everything
+            probe_byte_ranges(info, ytdl_opts.get("proxy"))
             self.respond(200, ydl.sanitize_info(info))
         except Exception as ex:
             self.respond(500, {"message": "ydl exception: {}".format(repr(ex))})
