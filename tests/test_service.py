@@ -3,6 +3,20 @@ import unittest
 from service import collect_byte_ranges, inject_byte_ranges
 
 
+class ByteRangeHookDriftGuardTest(unittest.TestCase):
+    def test_hook_wrapped_the_private_yt_dlp_method(self):
+        # Drift guard: _install_byte_range_capture deliberately swallows failures (extraction must
+        # keep working without ranges), so a yt-dlp upgrade that renames or removes
+        # _extract_player_responses would silently kill seeking in the field. Importing service
+        # (above) runs the install; this assertion turns that silent degradation into a CI failure
+        # on the uv.lock bump that introduces it.
+        from yt_dlp.extractor.youtube import YoutubeIE
+
+        method = getattr(YoutubeIE, "_extract_player_responses", None)
+        self.assertIsNotNone(method, "yt-dlp no longer has YoutubeIE._extract_player_responses - the seek byte-range hook is dead")
+        self.assertEqual(getattr(method, "__name__", None), "wrapper", "the byte-range hook did not wrap _extract_player_responses - seeking will silently degrade")
+
+
 class ByteRangeCaptureTest(unittest.TestCase):
     def test_collects_ranges_from_player_responses(self):
         player_responses = [
