@@ -25,5 +25,5 @@ COPY .buildkite/scripts/test.sh eslint.config.mjs package.json pnpm-lock.yaml pn
 
 RUN mise exec -- pnpm install --frozen-lockfile
 
-COPY index.js ./index.js
+COPY index.js service.py generate_filtered_extractors.py ./
 COPY tests ./tests

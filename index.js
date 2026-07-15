@@ -40,6 +40,9 @@ module.exports.PLAYLIST_ARGUMENTS = ['--flat-playlist', '-J'];
 
 const timescale = 48000;
 
+// Fallback bandwidth when yt-dlp reports no usable tbr.
+const DEFAULT_BANDWIDTH = 4382360;
+
 const generateDurationString = (totalSeconds) => {
   const secondsString = `${totalSeconds % 60}S`;
 
@@ -72,7 +75,7 @@ const generateManifest = (data, isAudio = false) => {
       <BaseURL><![CDATA[${fragment_base_url || ''}]]></BaseURL>
       <Period start="PT0.000S" duration="${durationString}">
         <AdaptationSet mimeType="${type}/${realExt}">
-          <Representation id="${format_id}" bandwidth="4382360">
+          <Representation id="${format_id}" bandwidth="${DEFAULT_BANDWIDTH}">
             <SegmentList timescale="${timescale}">
               ${fragments.map((fragment) => {
       const path = fragment.path.replace('&', '&amp;');
@@ -93,6 +96,72 @@ const generateManifest = (data, isAudio = false) => {
     </MPD>`
   );
 };
+
+// yt-dlp does not sanitize format_id/vcodec/ext/url, so escape them before interpolating into XML attributes.
+const escapeXmlAttr = (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// googlevideo URLs carry the file's total size in `clen`; used as the media byte-range end.
+const parseContentLength = (url) => {
+  const match = /[?&]clen=(\d+)/.exec(url || '');
+  return match ? parseInt(match[1], 10) : null;
+};
+// Fallback media-range end when clen is absent; googlevideo clamps an over-long range to the real length.
+const SEGMENT_END_SENTINEL = 9999999999;
+
+// YouTube video tracks are now single-file `https` URLs with no fragments; gstreamer can't seek them
+// as a raw URL (qtdemux rejects the flushing seek in push mode). Wrapping in a DASH manifest routes
+// them through dashdemux, which seeks via byte-range requests. Uses a single-segment SegmentList, not
+// SegmentBase/BaseURL: the box's legacy dashdemux drops the query string from <BaseURL>, and YouTube
+// URLs are all query, so a stripped BaseURL 404s. The full url in SegmentURL attributes preserves it.
+// Seeking works because the sidx sits at the front of the media range. init_range comes from service.py.
+const generateSegmentListManifest = ({ url, format_id, vcodec, width, height, tbr, ext, duration, init_range }) => {
+  const durationString = generateDurationString(duration);
+  const bandwidth = Math.round((tbr || 0) * 1000) || DEFAULT_BANDWIDTH;
+  const codecsAttr = vcodec && vcodec !== 'none' ? ` codecs="${escapeXmlAttr(vcodec)}"` : '';
+  const sizeAttrs = (width && height) ? ` width="${width}" height="${height}"` : '';
+  const initEnd = parseInt(String(init_range).split('-')[1], 10);
+  const mediaStart = Number.isFinite(initEnd) ? initEnd + 1 : 0;
+  const clen = parseContentLength(url);
+  const mediaEnd = clen ? clen - 1 : SEGMENT_END_SENTINEL;
+  const urlAttr = escapeXmlAttr(url);
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>
+    <MPD
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns="urn:mpeg:dash:schema:mpd:2011"
+      profiles="urn:mpeg:dash:profile:isoff-on-demand:2011"
+      mediaPresentationDuration="${durationString}"
+      minBufferTime="PT2S"
+      type="static"
+    >
+      <Period duration="${durationString}">
+        <AdaptationSet mimeType="video/${escapeXmlAttr(ext || 'mp4')}" contentType="video" subsegmentAlignment="true">
+          <Representation id="${escapeXmlAttr(format_id)}"${codecsAttr}${sizeAttrs} bandwidth="${bandwidth}">
+            <SegmentList duration="${Math.max(1, Math.round(duration))}">
+              <Initialization sourceURL="${urlAttr}" range="${init_range}"/>
+              <SegmentURL media="${urlAttr}" mediaRange="${mediaStart}-${mediaEnd}"/>
+            </SegmentList>
+          </Representation>
+        </AdaptationSet>
+      </Period>
+    </MPD>`
+  );
+};
+
+// Throttled googlevideo URLs (those with an `n` param, from web/tv clients) ignore deep Range requests
+// and serve from offset 0, which breaks seeking - so we only wrap un-throttled (android_vr) URLs.
+// Scoped to googlevideo: an `n` param on another CDN says nothing about throttling.
+function isThrottledUrl(url) {
+  if (typeof url !== 'string' || !/[?&]n=/.test(url)) {
+    return false;
+  }
+  try {
+    const { hostname } = new URL(url);
+    return hostname === 'googlevideo.com' || hostname.endsWith('.googlevideo.com');
+  } catch {
+    return false;
+  }
+}
 
 module.exports.isPlaylist = (url) => {
   return url.startsWith('https://www.youtube.com/playlist?list=');
@@ -246,18 +315,31 @@ module.exports.processV4 = (output, origin, locales = []) => {
   const duration = data.duration || 0;
   const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
   const title = data.title || '';
-  const processedVideoTracks = processVideoFormats(formats, !data.duration);
+  const processedVideoTracks = processVideoFormats(formats, !data.duration, true);
   const thumbnail = data.thumbnail || '';
 
   const audioTracks = processAudioFormats(formats, true);
 
   const video_tracks = processedVideoTracks.map(formatInfo => {
+    const combined = formatInfo.acodec !== 'none';
+    const track = { height: formatInfo.height, combined, format_id: formatInfo.format_id, protocol: formatInfo.protocol };
     if (formatInfo.fragments) {
       const manifest = generateManifest({ ...formatInfo, duration });
-      return { type: 'manifest', manifest, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
-    } else {
-      return { type: 'url', url: formatInfo.url, height: formatInfo.height, combined: formatInfo.acodec !== 'none', format_id: formatInfo.format_id, protocol: formatInfo.protocol };
+      return { type: 'manifest', manifest, ...track };
     }
+
+    // Wrap single-file https video-only tracks in a SegmentList manifest so they seek via dashdemux
+    // (see generateSegmentListManifest). Throttled URLs are excluded (they ignore Range, see
+    // isThrottledUrl); tracks without ranges fall back to a plain, non-seekable url. Combined tracks
+    // stay plain urls - un-throttled ones seek via qtdemux, throttled ones have no seekable form.
+    if (!combined && formatInfo.url && formatInfo.protocol && formatInfo.protocol.includes('https') && !isThrottledUrl(formatInfo.url) && formatInfo.init_range && formatInfo.index_range) {
+      const manifest = generateSegmentListManifest({ ...formatInfo, duration });
+      // Keep the plain url alongside the manifest: type:'manifest' + protocol:'https' is new, so a
+      // consumer that branches on protocol can still fall back to the (non-seekable) url.
+      return { type: 'manifest', manifest, url: formatInfo.url, ...track };
+    }
+
+    return { type: 'url', url: formatInfo.url, ...track };
   });
 
   // In V4 we just return all the eligible audio tracks and let the box pick.
@@ -328,12 +410,12 @@ function isSilentVideo(audio_bitrate) {
   return audio_bitrate && audio_bitrate <= 10;
 }
 
-function processVideoFormats(formats, isStream) {
+function processVideoFormats(formats, isStream, preferUnthrottled = false) {
   // Filter out tracks that are not suitable (see comments below)
   const filteredFormats = formats.filter((format) => filterVideoFormatCodecs(format) && filterVideoFormatFps(format));
 
   // Sort the tracks because .find will return the first match
-  filteredFormats.sort(videoTrackSort);
+  filteredFormats.sort(makeVideoTrackSort(preferUnthrottled));
 
   // If you change track selection, then all permutations of the following should ideally be tested:
   //    - signage, play content
@@ -373,57 +455,77 @@ function processVideoFormats(formats, isStream) {
 // Return > 0 if b is preferred
 // Return < 0 if a is preferred
 // Never return 0, we want track selection to be deterministic!
-function videoTrackSort(a, b) {
-  // Prefer English audio
-  const englishAudioTag = 'original:lang%3Den';
-  if ((a.url && a.url.includes(englishAudioTag)) && !(b.url && b.url.includes(englishAudioTag))) {
-    return -1;
-  }
-  if (!(a.url && a.url.includes(englishAudioTag)) && (b.url && b.url.includes(englishAudioTag))) {
-    return 1;
-  }
-
-  // Prefer tracks with higher resolution
-  if (a.height !== b.height) {
-    return b.height - a.height;
-  }
-  
-  // Prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
-  if (!a.protocol.includes('dash') && b.protocol.includes('dash')) {
-    return -1;
-  }
-  if (a.protocol.includes('dash') && !b.protocol.includes('dash')) {
-    return 1;
-  }
-
-  // Then prefer combined tracks over video-only tracks
-  if (a.acodec !== 'none' && b.acodec === 'none') {
-    return -1;
-  }
-  if (a.acodec === 'none' && b.acodec !== 'none') {
-    return 1;
-  }
-
-  if (a.format_id.includes('akfire_interconnect') || a.format_id.includes('fastly_skyfire')) {
-    // Vimeo video!
-    // If one has 'sep' in the format_id and one does not, we take the one with 'sep' in its format_id
-    // VIVI-12238: video tracks that don't have '_sep' in its format_id are sometimes failing, reasons unknown
-    if (a.format_id.includes('_sep') && !b.format_id.includes('_sep')) {
+//
+// preferUnthrottled is V4-only: it prefers the un-throttled variant of a resolution so it can be
+// served as a seekable manifest (see isThrottledUrl). V3 keeps its historical selection (lower bitrate).
+function makeVideoTrackSort(preferUnthrottled = false) {
+  return function videoTrackSort(a, b) {
+    // Prefer English audio
+    const englishAudioTag = 'original:lang%3Den';
+    if ((a.url && a.url.includes(englishAudioTag)) && !(b.url && b.url.includes(englishAudioTag))) {
       return -1;
     }
-    if (!a.format_id.includes('_sep') && b.format_id.includes('_sep')) {
+    if (!(a.url && a.url.includes(englishAudioTag)) && (b.url && b.url.includes(englishAudioTag))) {
       return 1;
     }
-  }
 
-  // Then prefer lower total bit rate
-  if (a.tbr != b.tbr) {
-    return a.tbr - b.tbr;
-  }
+    // Prefer tracks with higher resolution
+    if (a.height !== b.height) {
+      return b.height - a.height;
+    }
 
-  // Sort on format_id, which is guaranteed to be unique per track
-  return a.format_id < b.format_id ? -1 : 1;
+    // Only compared between plain https tracks: manifest urls (m3u8/dash) never carry the n param,
+    // so without this guard they would always win the throttle comparison.
+    if (preferUnthrottled && a.protocol.includes('https') && b.protocol.includes('https')) {
+      const aThrottled = isThrottledUrl(a.url);
+      const bThrottled = isThrottledUrl(b.url);
+      if (!aThrottled && bThrottled) {
+        return -1;
+      }
+      if (aThrottled && !bThrottled) {
+        return 1;
+      }
+    }
+
+    // Prefer non-dash tracks. (Dash = manifest xml. Non-dash = a link that can be easily tested in a browser)
+    if (!a.protocol.includes('dash') && b.protocol.includes('dash')) {
+      return -1;
+    }
+    if (a.protocol.includes('dash') && !b.protocol.includes('dash')) {
+      return 1;
+    }
+
+    // Then prefer combined tracks over video-only tracks
+    if (a.acodec !== 'none' && b.acodec === 'none') {
+      return -1;
+    }
+    if (a.acodec === 'none' && b.acodec !== 'none') {
+      return 1;
+    }
+
+    if (a.format_id.includes('akfire_interconnect') || a.format_id.includes('fastly_skyfire')) {
+      // Vimeo video!
+      // If one has 'sep' in the format_id and one does not, we take the one with 'sep' in its format_id
+      // VIVI-12238: video tracks that don't have '_sep' in its format_id are sometimes failing, reasons unknown
+      if (a.format_id.includes('_sep') && !b.format_id.includes('_sep')) {
+        return -1;
+      }
+      if (!a.format_id.includes('_sep') && b.format_id.includes('_sep')) {
+        return 1;
+      }
+    }
+
+    // Then prefer lower total bit rate
+    if (a.tbr != b.tbr) {
+      return a.tbr - b.tbr;
+    }
+
+    // Sort on format_id, which is guaranteed to be unique per track
+    return a.format_id < b.format_id ? -1 : 1;
+  };
 }
+
+const videoTrackSort = makeVideoTrackSort();
 
 function filterVideoFormatCodecs(format) {
   const { format_id, vcodec } = format;
@@ -544,7 +646,10 @@ function getSubtitlesForAllLocales(origin, subtitles, automatic_captions, useEmp
 
 module.exports._private_testing = {
   generateDurationString,
+  generateSegmentListManifest,
+  isThrottledUrl,
   audioTrackSort,
+  makeVideoTrackSort,
   videoTrackSort,
   filterVideoFormatCodecs,
   filterAudioFormatCodecs
