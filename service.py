@@ -19,7 +19,7 @@ from generate_filtered_extractors import generate_filtered_extractors
 MAX_DOWNLOAD_BIT_RATE_KB = 4000  # 4Mbps
 MIN_DOWNLOAD_BIT_RATE_KB = 1000  # 1Mbps
 
-MAX_DOWNLOAD_DURATION_SECONDS = 30 * 60  # 30 minutes
+MAX_DOWNLOAD_DURATION_SECONDS = 60 * 60  # 1 hour
 
 # Each request is handled on its own thread, so captured ranges live in a thread-local: a fresh dict
 # for the duration of each /process extraction, None otherwise.
