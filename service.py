@@ -121,7 +121,10 @@ class Handler(BaseHTTPRequestHandler):
 
             inject_byte_ranges(info, _captured_ranges.ranges)
             # fallback: probes only formats the capture missed (no fetches when it missed none)
-            probe_byte_ranges(info, ytdl_opts.get("proxy"))
+            probe_filled, probe_failed = probe_byte_ranges(info, ytdl_opts.get("proxy"))
+            if probe_filled or probe_failed:
+                # filled > 0: the capture broke and the probe is carrying seek; failed > 0: those formats ship non-seekable
+                self.warning("byte-range capture missed formats", {"probe_filled": probe_filled, "probe_failed": probe_failed})
             self.respond(200, ydl.sanitize_info(info))
         except Exception as ex:
             self.respond(500, {"message": "ydl exception: {}".format(repr(ex))})

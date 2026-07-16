@@ -32,7 +32,7 @@ class ByteRangeProbeFallbackTest(unittest.TestCase):
         }
         head = self._mp4_box("ftyp", 28) + self._mp4_box("moov", 714) + self._mp4_box("sidx", 188) + self._mp4_box("moof", 64)
         with patch("sidx_probe._fetch_file_head", return_value=head) as fetch:
-            probe_byte_ranges(info, proxy=None)
+            self.assertEqual(probe_byte_ranges(info, proxy=None), (1, 0))
         fetch.assert_called_once_with("https://x/videoplayback2", None)
         self.assertEqual(info["formats"][1]["init_range"], "0-741")
         self.assertEqual(info["formats"][1]["index_range"], "742-929")
@@ -43,7 +43,7 @@ class ByteRangeProbeFallbackTest(unittest.TestCase):
     def test_probe_failure_leaves_format_unannotated(self):
         info = {"formats": [{"format_id": "137", "protocol": "https", "url": "https://x/vp", "ext": "mp4", "vcodec": "avc1.64", "acodec": "none"}]}
         with patch("sidx_probe._fetch_file_head", side_effect=OSError("proxy down")):
-            probe_byte_ranges(info, proxy="http://proxy:1")
+            self.assertEqual(probe_byte_ranges(info, proxy="http://proxy:1"), (0, 1))
         self.assertNotIn("init_range", info["formats"][0])
 
 
