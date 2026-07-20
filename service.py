@@ -19,6 +19,8 @@ from generate_filtered_extractors import generate_filtered_extractors
 MAX_DOWNLOAD_BIT_RATE_KB = 4000  # 4Mbps
 MIN_DOWNLOAD_BIT_RATE_KB = 1000  # 1Mbps
 
+MAX_DOWNLOAD_DURATION_SECONDS = 60 * 60  # 1 hour
+
 # Each request is handled on its own thread, so captured ranges live in a thread-local: a fresh dict
 # for the duration of each /process extraction, None otherwise.
 _captured_ranges = threading.local()
@@ -158,6 +160,17 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.error("failed to find any valid format", {"formats": loggable_formats})
 
+    def _duration_match_filter(self, info, *, incomplete):
+        """Reject videos longer than MAX_DOWNLOAD_DURATION_SECONDS.
+
+        Videos with unknown duration (duration missing/None) are allowed through.
+        """
+        duration = info.get("duration")
+        if duration and duration > MAX_DOWNLOAD_DURATION_SECONDS:
+            msg = "The video is too long"
+            self.warning(msg, extra_info={"url": info.get("webpage_url"), "duration": duration})
+            return msg
+
     def download_track(self, ytdl_opts: dict, url: str, filename: str):
         # Prefer split tracks (bestvideo,bestaudio) for higher quality (e.g. YouTube caps combined at 720p),
         # fall back to best combined format when split tracks are unavailable.
@@ -256,6 +269,7 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts["socket_timeout"] = 120
             ydl_opts["retries"] = float("inf")  # I know this looks like a lot but we have the fragment tries limit below that we want to use
             ydl_opts["fragment_retries"] = 5
+            ydl_opts["match_filter"] = self._duration_match_filter
 
             download_res = self.download_track(ydl_opts, qs["url"][0], filename)
 
