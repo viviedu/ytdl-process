@@ -176,45 +176,28 @@ class Handler(BaseHTTPRequestHandler):
         # fall back to best combined format when split tracks are unavailable.
         ytdl_opts["format"] = self._ytdl_format_selector
 
-        try:
-            with YoutubeDL(ytdl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+        with YoutubeDL(ytdl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
 
-            self.debug("track downloaded successfully", extra_info={ "url": url })
-            id = info["id"]
-            requested_downloads = info["requested_downloads"]
+        self.debug("track downloaded successfully", extra_info={ "url": url })
+        id = info["id"]
+        requested_downloads = info["requested_downloads"]
 
-            if len(requested_downloads) == 2:
-                video_file = requested_downloads[0] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[1]
-                audio_file = requested_downloads[1] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[0]
+        if len(requested_downloads) == 2:
+            video_file = requested_downloads[0] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[1]
+            audio_file = requested_downloads[1] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[0]
 
-                video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
-                audio_filename_with_ext = f"{filename}/{id}_{audio_file['format_id']}.{audio_file['ext']}"
+            video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
+            audio_filename_with_ext = f"{filename}/{id}_{audio_file['format_id']}.{audio_file['ext']}"
 
-                if not os.path.exists(video_filename_with_ext):
-                    self.warning("video file cannot be found after downloading", extra_info={"url": url})
-                    return False
-
-                if not os.path.exists(audio_filename_with_ext):
-                    self.warning("audio file cannot be found after downloading", extra_info={"url": url})
-                    return False
-
-                return {"video": video_filename_with_ext, "audio": audio_filename_with_ext}
-            elif len(requested_downloads) == 1:
-                video_file = requested_downloads[0]
-                video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
-
-                if not os.path.exists(video_filename_with_ext):
-                    self.warning("video file cannot be found after downloading", extra_info={"url": url})
-                    return False
-
-                return {"video": video_filename_with_ext}
-            else:
-                self.warning(f"expected 1 or 2 tracks, got {len(requested_downloads)}", extra_info={"url": url})
-                return False
-        except Exception as e:
-            self.warning(str(e), extra_info={"url": url})
-            return False
+            return {"video": video_filename_with_ext, "audio": audio_filename_with_ext}
+        elif len(requested_downloads) == 1:
+            video_file = requested_downloads[0]
+            video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
+            return {"video": video_filename_with_ext}
+        else:
+            msg = f"expected 1 or 2 tracks, got {len(requested_downloads)}"
+            raise Exception(msg)
 
     def do_GET(self):
         url = urlparse(self.path)
@@ -271,12 +254,11 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts["fragment_retries"] = 5
             ydl_opts["match_filter"] = self._duration_match_filter
 
-            download_res = self.download_track(ydl_opts, qs["url"][0], filename)
-
-            if download_res:
+            try:
+                download_res = self.download_track(ydl_opts, qs["url"][0], filename)
                 self.respond(200, download_res)
-            else:
-                self.respond(500, {"message": "failed all downloads"})
+            except Exception as e:
+                self.respond(500, {"message": str(e)})
         else:
             self.respond(500, {"message": "no matching path", "url": url.path})
 
@@ -308,11 +290,11 @@ def cli_download(url: str, proxy: str | None = None):
     ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
 
     handler = Handler.__new__(Handler)
-    result = handler.download_track(ydl_opts, url, filename)
-    if result:
+    try:
+        result = handler.download_track(ydl_opts, url, filename)
         print(json.dumps(result, indent=2))
-    else:
-        print(json.dumps({"message": "failed all downloads"}), file=sys.stderr)
+    except Exception as e:
+        print(json.dumps({"message": str(e)}), file=sys.stderr)
         sys.exit(1)
 
 
