@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
+import shutil
 import argparse
 import json
-import os
 import sys
 import tempfile
 import threading
@@ -240,24 +240,25 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts["extract_flat"] = True
             self.ytdl_request(ydl_opts, qs["url"][0])
         elif url.path == "/download":
-            if proxy_url and proxy_url[0] != "":
-                ydl_opts["proxy"] = proxy_url[0]
-
-            filename = tempfile.mkdtemp()
-            ydl_opts["noplaylist"] = True
-            ydl_opts["cachedir"] = False
-            ydl_opts["simulate"] = False
-            ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
-            ydl_opts["sleep_requests"] = 2  # 2s between HTTP requests
-            ydl_opts["socket_timeout"] = 120
-            ydl_opts["retries"] = float("inf")  # I know this looks like a lot but we have the fragment tries limit below that we want to use
-            ydl_opts["fragment_retries"] = 5
-            ydl_opts["match_filter"] = self._duration_match_filter
-
             try:
+                if proxy_url and proxy_url[0] != "":
+                    ydl_opts["proxy"] = proxy_url[0]
+
+                filename = tempfile.mkdtemp()
+                ydl_opts["noplaylist"] = True
+                ydl_opts["cachedir"] = False
+                ydl_opts["simulate"] = False
+                ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
+                ydl_opts["sleep_requests"] = 2  # 2s between HTTP requests
+                ydl_opts["socket_timeout"] = 120
+                ydl_opts["retries"] = float("inf")  # I know this looks like a lot but we have the fragment tries limit below that we want to use
+                ydl_opts["fragment_retries"] = 5
+                ydl_opts["match_filter"] = self._duration_match_filter
+
                 download_res = self.download_track(ydl_opts, qs["url"][0], filename)
                 self.respond(200, download_res)
             except Exception as e:
+                shutil.rmtree(filename)
                 self.respond(500, {"message": str(e)})
         else:
             self.respond(500, {"message": "no matching path", "url": url.path})
@@ -294,6 +295,7 @@ def cli_download(url: str, proxy: str | None = None):
         result = handler.download_track(ydl_opts, url, filename)
         print(json.dumps(result, indent=2))
     except Exception as e:
+        shutil.rmtree(filename)
         print(json.dumps({"message": str(e)}), file=sys.stderr)
         sys.exit(1)
 
