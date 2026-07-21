@@ -345,3 +345,76 @@ test('processV4 leaves combined tracks as plain url tracks', () => {
   expect(result.video[0].type).toBe('url');
   expect(result.video[0].combined).toBe(true);
 });
+
+const seekableAudioFormat = {
+  format_id: '140',
+  acodec: 'mp4a.40.2',
+  vcodec: 'none',
+  protocol: 'https',
+  abr: 129,
+  ext: 'm4a',
+  url: 'https://rr1---sn-example.googlevideo.com/videoplayback?itag=140&clen=10305226&c=ANDROID_VR',
+  init_range: '0-631',
+  index_range: '632-1571'
+};
+
+const opusAudioFormat = {
+  format_id: '251',
+  acodec: 'opus',
+  vcodec: 'none',
+  protocol: 'https',
+  abr: 130,
+  ext: 'webm',
+  url: 'https://rr1---sn-example.googlevideo.com/videoplayback?itag=251&c=ANDROID_VR',
+  init_range: '0-258',
+  index_range: '259-871'
+};
+
+test('generateSegmentListManifest with isAudio emits an audio/mp4 AdaptationSet without dimensions', () => {
+  const manifest = generateSegmentListManifest({ ...seekableAudioFormat, duration: 634 }, true);
+  expect(manifest).toContain('mimeType="audio/mp4"');
+  expect(manifest).toContain('contentType="audio"');
+  expect(manifest).toContain('codecs="mp4a.40.2"');
+  expect(manifest).not.toContain(' width="');
+  expect(manifest).toContain('range="0-631"');
+  expect(manifest).toContain('mediaRange="632-10305225"');
+});
+
+test('processV4 wraps un-throttled m4a audio in a manifest and lists it before raw tracks', () => {
+  const result = processV4(makeYtdlOutput([opusAudioFormat, seekableAudioFormat]), '');
+  expect(result.audio).toHaveLength(2);
+  // the manifest track comes first so physical boxes (first passing track wins) pick it...
+  expect(result.audio[0].format_id).toBe('140');
+  expect(result.audio[0].type).toBe('manifest');
+  expect(result.audio[0].manifest).toContain('mimeType="audio/mp4"');
+  // ...under a protocol that release boxes accept (not https+mp4a) and Vivi Display skips
+  expect(result.audio[0].protocol).toBe('https_manifest');
+  // the plain url is kept alongside the manifest, like the video tracks
+  expect(result.audio[0].url).toBe(seekableAudioFormat.url);
+  // the raw opus track is unchanged and still available for Vivi Display
+  expect(result.audio[1].format_id).toBe('251');
+  expect(result.audio[1].type).toBe('url');
+  expect(result.audio[1].protocol).toBe('https');
+});
+
+test('processV4 leaves webm/opus audio as a plain url track even with byte ranges', () => {
+  const result = processV4(makeYtdlOutput([opusAudioFormat]), '');
+  expect(result.audio[0].type).toBe('url');
+  expect(result.audio[0].url).toBe(opusAudioFormat.url);
+});
+
+test('processV4 falls back to a plain url audio track when byte ranges are missing', () => {
+  const withoutRanges = { ...seekableAudioFormat };
+  delete withoutRanges.init_range;
+  delete withoutRanges.index_range;
+  const result = processV4(makeYtdlOutput([withoutRanges]), '');
+  expect(result.audio[0].type).toBe('url');
+  expect(result.audio[0].protocol).toBe('https');
+});
+
+test('processV4 does not wrap throttled m4a urls', () => {
+  const throttled = { ...seekableAudioFormat, url: 'https://rr1---sn-example.googlevideo.com/videoplayback?itag=140&n=abc&c=TVHTML5' };
+  const result = processV4(makeYtdlOutput([throttled]), '');
+  expect(result.audio[0].type).toBe('url');
+  expect(result.audio[0].protocol).toBe('https');
+});

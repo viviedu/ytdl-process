@@ -113,11 +113,15 @@ const SEGMENT_END_SENTINEL = 9999999999;
 // SegmentBase/BaseURL: the box's legacy dashdemux drops the query string from <BaseURL>, and YouTube
 // URLs are all query, so a stripped BaseURL 404s. The full url in SegmentURL attributes preserves it.
 // Seeking works because the sidx sits at the front of the media range. init_range comes from service.py.
-const generateSegmentListManifest = ({ url, format_id, vcodec, width, height, tbr, ext, duration, init_range }) => {
+// isAudio emits an audio/mp4 AdaptationSet instead; YouTube m4a shares the mp4s' sidx layout.
+const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, height, tbr, abr, ext, duration, init_range }, isAudio = false) => {
   const durationString = generateDurationString(duration);
-  const bandwidth = Math.round((tbr || 0) * 1000) || DEFAULT_BANDWIDTH;
-  const codecsAttr = vcodec && vcodec !== 'none' ? ` codecs="${escapeXmlAttr(vcodec)}"` : '';
-  const sizeAttrs = (width && height) ? ` width="${width}" height="${height}"` : '';
+  const bandwidth = Math.round(((tbr || abr) || 0) * 1000) || DEFAULT_BANDWIDTH;
+  const codec = isAudio ? acodec : vcodec;
+  const codecsAttr = codec && codec !== 'none' ? ` codecs="${escapeXmlAttr(codec)}"` : '';
+  const sizeAttrs = (!isAudio && width && height) ? ` width="${width}" height="${height}"` : '';
+  const mimeType = isAudio ? 'audio/mp4' : `video/${escapeXmlAttr(ext || 'mp4')}`; // m4a is audio only mp4. gstreamer needs 'mp4' here
+  const contentType = isAudio ? 'audio' : 'video';
   const initEnd = parseInt(String(init_range).split('-')[1], 10);
   const mediaStart = Number.isFinite(initEnd) ? initEnd + 1 : 0;
   const clen = parseContentLength(url);
@@ -135,7 +139,7 @@ const generateSegmentListManifest = ({ url, format_id, vcodec, width, height, tb
       type="static"
     >
       <Period duration="${durationString}">
-        <AdaptationSet mimeType="video/${escapeXmlAttr(ext || 'mp4')}" contentType="video" subsegmentAlignment="true">
+        <AdaptationSet mimeType="${mimeType}" contentType="${contentType}" subsegmentAlignment="true">
           <Representation id="${escapeXmlAttr(format_id)}"${codecsAttr}${sizeAttrs} bandwidth="${bandwidth}">
             <SegmentList duration="${Math.max(1, Math.round(duration))}">
               <Initialization sourceURL="${urlAttr}" range="${init_range}"/>
@@ -161,6 +165,10 @@ function isThrottledUrl(url) {
   } catch {
     return false;
   }
+}
+
+function canBuildSeekableManifest({ url, protocol, init_range, index_range }) {
+  return Boolean(url && protocol && protocol.includes('https') && !isThrottledUrl(url) && init_range && index_range);
 }
 
 module.exports.isPlaylist = (url) => {
@@ -332,7 +340,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
     // (see generateSegmentListManifest). Throttled URLs are excluded (they ignore Range, see
     // isThrottledUrl); tracks without ranges fall back to a plain, non-seekable url. Combined tracks
     // stay plain urls - un-throttled ones seek via qtdemux, throttled ones have no seekable form.
-    if (!combined && formatInfo.url && formatInfo.protocol && formatInfo.protocol.includes('https') && !isThrottledUrl(formatInfo.url) && formatInfo.init_range && formatInfo.index_range) {
+    if (!combined && canBuildSeekableManifest(formatInfo)) {
       const manifest = generateSegmentListManifest({ ...formatInfo, duration });
       // Keep the plain url alongside the manifest: type:'manifest' + protocol:'https' is new, so a
       // consumer that branches on protocol can still fall back to the (non-seekable) url.
@@ -344,28 +352,42 @@ module.exports.processV4 = (output, origin, locales = []) => {
 
   // In V4 we just return all the eligible audio tracks and let the box pick.
   //
-  // The three most common kinds of audio tracks:
+  // The most common kinds of audio tracks:
   //  1) proto=https acodec=opus: ok on Vivi Display, ok on physical devices
   //  2) proto=https acodec=mp4a: ok on Vivi Display, cannot be played on physical devices
   //  3) proto=m3u8 acodec=unknown: cannot be played on Vivi Display, ok on phyiscal devices
+  //  4) proto=https_manifest acodec=mp4a: "2)" wrapped in a seekable manifest by us.
   //
   // Type 1 is the best. There are (very rarely) youtube videos that do not have this kind of track.
   // Just return everything and let vivi-box pick, it knows whether it's on a Vivi Display or on a physical device
   const formattedTracks = audioTracks.map(audioTrack => {
-    const { acodec, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
+    const { acodec, ext, fragments: audio_fragments, url: audio_url, format_id: audio_format, abr: audio_bitrate, protocol: audio_protocol, language } = audioTrack;
     const audio_language = language || 'unknown';
     if (isSilentVideo(audio_bitrate)) {
       return;
     } else if (audio_fragments) {
       const audioManifest = generateManifest({ ...audioTrack, duration }, true);
       return { type: 'manifest', acodec, manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
-    } else {
-      return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
     }
+
+    // Route seekable M4A audio through the same DASH path used for HTTPS video tracks.
+    if (ext === 'm4a' && canBuildSeekableManifest(audioTrack)) {
+      const audioManifest = generateSegmentListManifest({ ...audioTrack, duration }, true);
+      return { type: 'manifest', acodec, manifest: audioManifest, url: audio_url, format_id: audio_format, protocol: 'https_manifest', language: audio_language };
+    }
+
+    return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
   }).filter(Boolean);
 
+  // Seekable manifest tracks first - the physical-box preference. Vivi Display selects strictly
+  // on protocol === 'https', so this order change does not affect what it plays.
+  const audio = [
+    ...formattedTracks.filter((track) => track.protocol === 'https_manifest'),
+    ...formattedTracks.filter((track) => track.protocol !== 'https_manifest')
+  ];
+
   return {
-    audio: formattedTracks,
+    audio,
     cookies,
     duration,
     silent_video: formattedTracks.length === 0,
