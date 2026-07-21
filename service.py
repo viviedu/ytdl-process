@@ -259,7 +259,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(200, download_res)
             except Exception as e:
                 shutil.rmtree(filename)
-                self.respond(500, {"message": str(e)})
+                self.respond(500, {"error": str(e)})
         else:
             self.respond(500, {"message": "no matching path", "url": url.path})
 
