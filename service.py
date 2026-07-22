@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
+import shutil
 import argparse
 import json
-import os
 import sys
 import tempfile
 import threading
@@ -171,50 +171,28 @@ class Handler(BaseHTTPRequestHandler):
             self.warning(msg, extra_info={"url": info.get("webpage_url"), "duration": duration})
             return msg
 
-    def download_track(self, ytdl_opts: dict, url: str, filename: str):
+    def download_track(self, ytdl_opts: dict, url: str):
         # Prefer split tracks (bestvideo,bestaudio) for higher quality (e.g. YouTube caps combined at 720p),
         # fall back to best combined format when split tracks are unavailable.
         ytdl_opts["format"] = self._ytdl_format_selector
 
-        try:
-            with YoutubeDL(ytdl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+        with YoutubeDL(ytdl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
 
-            self.debug("track downloaded successfully", extra_info={ "url": url })
-            id = info["id"]
-            requested_downloads = info["requested_downloads"]
+        requested_downloads = info["requested_downloads"]
+        self.debug("track downloaded successfully", extra_info={ "url": url })
 
-            if len(requested_downloads) == 2:
-                video_file = requested_downloads[0] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[1]
-                audio_file = requested_downloads[1] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[0]
+        if len(requested_downloads) == 2:
+            is_first_download_a_video: bool = requested_downloads[0]["video_ext"] != "none"
+            video_file = requested_downloads[0] if is_first_download_a_video else requested_downloads[1]
+            audio_file = requested_downloads[1] if is_first_download_a_video else requested_downloads[0]
 
-                video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
-                audio_filename_with_ext = f"{filename}/{id}_{audio_file['format_id']}.{audio_file['ext']}"
-
-                if not os.path.exists(video_filename_with_ext):
-                    self.warning("video file cannot be found after downloading", extra_info={"url": url})
-                    return False
-
-                if not os.path.exists(audio_filename_with_ext):
-                    self.warning("audio file cannot be found after downloading", extra_info={"url": url})
-                    return False
-
-                return {"video": video_filename_with_ext, "audio": audio_filename_with_ext}
-            elif len(requested_downloads) == 1:
-                video_file = requested_downloads[0]
-                video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
-
-                if not os.path.exists(video_filename_with_ext):
-                    self.warning("video file cannot be found after downloading", extra_info={"url": url})
-                    return False
-
-                return {"video": video_filename_with_ext}
-            else:
-                self.warning(f"expected 1 or 2 tracks, got {len(requested_downloads)}", extra_info={"url": url})
-                return False
-        except Exception as e:
-            self.warning(str(e), extra_info={"url": url})
-            return False
+            return {"video": video_file["filepath"], "audio": audio_file["filepath"]}
+        elif len(requested_downloads) == 1:
+            return {"video": requested_downloads[0]["filepath"]}
+        else:
+            msg = f"expected 1 or 2 tracks, got {len(requested_downloads)}"
+            raise Exception(msg)
 
     def do_GET(self):
         url = urlparse(self.path)
@@ -257,26 +235,26 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts["extract_flat"] = True
             self.ytdl_request(ydl_opts, qs["url"][0])
         elif url.path == "/download":
-            if proxy_url and proxy_url[0] != "":
-                ydl_opts["proxy"] = proxy_url[0]
+            try:
+                if proxy_url and proxy_url[0] != "":
+                    ydl_opts["proxy"] = proxy_url[0]
 
-            filename = tempfile.mkdtemp()
-            ydl_opts["noplaylist"] = True
-            ydl_opts["cachedir"] = False
-            ydl_opts["simulate"] = False
-            ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
-            ydl_opts["sleep_requests"] = 2  # 2s between HTTP requests
-            ydl_opts["socket_timeout"] = 120
-            ydl_opts["retries"] = float("inf")  # I know this looks like a lot but we have the fragment tries limit below that we want to use
-            ydl_opts["fragment_retries"] = 5
-            ydl_opts["match_filter"] = self._duration_match_filter
+                filename = tempfile.mkdtemp()
+                ydl_opts["noplaylist"] = True
+                ydl_opts["cachedir"] = False
+                ydl_opts["simulate"] = False
+                ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
+                ydl_opts["sleep_requests"] = 2  # 2s between HTTP requests
+                ydl_opts["socket_timeout"] = 120
+                ydl_opts["retries"] = float("inf")  # I know this looks like a lot but we have the fragment tries limit below that we want to use
+                ydl_opts["fragment_retries"] = 5
+                ydl_opts["match_filter"] = self._duration_match_filter
 
-            download_res = self.download_track(ydl_opts, qs["url"][0], filename)
-
-            if download_res:
+                download_res = self.download_track(ydl_opts, qs["url"][0])
                 self.respond(200, download_res)
-            else:
-                self.respond(500, {"message": "failed all downloads"})
+            except Exception as e:
+                self.respond(500, {"error": str(e)})
+                shutil.rmtree(filename, ignore_errors=True)
         else:
             self.respond(500, {"message": "no matching path", "url": url.path})
 
@@ -308,11 +286,12 @@ def cli_download(url: str, proxy: str | None = None):
     ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
 
     handler = Handler.__new__(Handler)
-    result = handler.download_track(ydl_opts, url, filename)
-    if result:
+    try:
+        result = handler.download_track(ydl_opts, url)
         print(json.dumps(result, indent=2))
-    else:
-        print(json.dumps({"message": "failed all downloads"}), file=sys.stderr)
+    except Exception as e:
+        shutil.rmtree(filename)
+        print(json.dumps({"message": str(e)}), file=sys.stderr)
         sys.exit(1)
 
 
