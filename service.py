@@ -171,7 +171,7 @@ class Handler(BaseHTTPRequestHandler):
             self.warning(msg, extra_info={"url": info.get("webpage_url"), "duration": duration})
             return msg
 
-    def download_track(self, ytdl_opts: dict, url: str, filename: str):
+    def download_track(self, ytdl_opts: dict, url: str):
         # Prefer split tracks (bestvideo,bestaudio) for higher quality (e.g. YouTube caps combined at 720p),
         # fall back to best combined format when split tracks are unavailable.
         ytdl_opts["format"] = self._ytdl_format_selector
@@ -179,22 +179,17 @@ class Handler(BaseHTTPRequestHandler):
         with YoutubeDL(ytdl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
 
-        self.debug("track downloaded successfully", extra_info={ "url": url })
-        id = info["id"]
         requested_downloads = info["requested_downloads"]
+        self.debug("track downloaded successfully", extra_info={ "url": url })
 
         if len(requested_downloads) == 2:
-            video_file = requested_downloads[0] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[1]
-            audio_file = requested_downloads[1] if requested_downloads[0]["video_ext"] != "none" else requested_downloads[0]
+            is_first_download_a_video: bool = requested_downloads[0]["video_ext"] != "none"
+            video_file = requested_downloads[0] if is_first_download_a_video else requested_downloads[1]
+            audio_file = requested_downloads[1] if is_first_download_a_video else requested_downloads[0]
 
-            video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
-            audio_filename_with_ext = f"{filename}/{id}_{audio_file['format_id']}.{audio_file['ext']}"
-
-            return {"video": video_filename_with_ext, "audio": audio_filename_with_ext}
+            return {"video": video_file["filepath"], "audio": audio_file["filepath"]}
         elif len(requested_downloads) == 1:
-            video_file = requested_downloads[0]
-            video_filename_with_ext = f"{filename}/{id}_{video_file['format_id']}.{video_file['ext']}"
-            return {"video": video_filename_with_ext}
+            return {"video": requested_downloads[0]["filepath"]}
         else:
             msg = f"expected 1 or 2 tracks, got {len(requested_downloads)}"
             raise Exception(msg)
@@ -255,11 +250,14 @@ class Handler(BaseHTTPRequestHandler):
                 ydl_opts["fragment_retries"] = 5
                 ydl_opts["match_filter"] = self._duration_match_filter
 
-                download_res = self.download_track(ydl_opts, qs["url"][0], filename)
+                download_res = self.download_track(ydl_opts, qs["url"][0])
                 self.respond(200, download_res)
             except Exception as e:
-                shutil.rmtree(filename)
                 self.respond(500, {"error": str(e)})
+                try:
+                    shutil.rmtree(filename)
+                except Exception as cleanup_error:
+                    self.error("failed to clean up bad download", { "error": cleanup_error })
         else:
             self.respond(500, {"message": "no matching path", "url": url.path})
 
@@ -292,7 +290,7 @@ def cli_download(url: str, proxy: str | None = None):
 
     handler = Handler.__new__(Handler)
     try:
-        result = handler.download_track(ydl_opts, url, filename)
+        result = handler.download_track(ydl_opts, url)
         print(json.dumps(result, indent=2))
     except Exception as e:
         shutil.rmtree(filename)
