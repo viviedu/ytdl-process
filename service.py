@@ -254,10 +254,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(200, download_res)
             except Exception as e:
                 self.respond(500, {"error": str(e)})
-                try:
-                    shutil.rmtree(filename)
-                except Exception as cleanup_error:
-                    self.error("failed to clean up bad download", { "error": cleanup_error })
+                shutil.rmtree(filename, ignore_errors=True)
         else:
             self.respond(500, {"message": "no matching path", "url": url.path})
 
