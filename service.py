@@ -229,7 +229,7 @@ class Handler(BaseHTTPRequestHandler):
             # non-fatal extras (can still add HLS). This option is ignored by yt-dlp for non-youtube URLs.
             # android_vr is also load-bearing for seeking: only its (n-less) URLs can be wrapped into
             # a seekable manifest by index.js (see isThrottledUrl). Dropping it silently kills seeking.
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android_vr", "web_safari", "tv"]}}
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android_vr", "visionos", "web_safari", "tv"]}}
             self.ytdl_request(ydl_opts, qs["url"][0])
         elif url.path == "/process_playlist":
             ydl_opts["extract_flat"] = True
