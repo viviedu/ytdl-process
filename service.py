@@ -168,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
         """
         duration = info.get("duration")
         if duration and duration > MAX_DOWNLOAD_DURATION_SECONDS:
-            raise Exception('video_link is over 1 hour')
+            raise Exception('video exceeds max allowed download duration')
 
     def download_track(self, ytdl_opts: dict, url: str):
         # Prefer split tracks (bestvideo,bestaudio) for higher quality (e.g. YouTube caps combined at 720p),
