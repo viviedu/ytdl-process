@@ -130,7 +130,7 @@ class Handler(BaseHTTPRequestHandler):
             _captured_ranges.ranges = None
 
     def _ytdl_format_selector(self, ctx: Any):
-        formats: list[dict[str, Any]] = ctx.get("formats", [])
+        formats: list[dict[str, Any]] = ctx.get("formats") or []
 
         loggable_formats = [
             {"width": f.get("width"), "height": f.get("height"), "tbr": f.get("tbr"), "quality": f.get("quality"), "filesize": f.get("filesize")}
@@ -138,22 +138,23 @@ class Handler(BaseHTTPRequestHandler):
         ]
         self.debug("parsed formats", {"formats": loggable_formats})
 
-        filtered_formats = [f for f in formats if f.get("quality") is not None and MIN_DOWNLOAD_BIT_RATE_KB <= float(f.get("tbr", 0)) <= MAX_DOWNLOAD_BIT_RATE_KB]
+        quality_formats = [f for f in formats if f.get("quality") is not None and f.get("quality") != -1]
+
+        filtered_formats = [f for f in quality_formats if MIN_DOWNLOAD_BIT_RATE_KB <= float(f.get("tbr") or 0) <= MAX_DOWNLOAD_BIT_RATE_KB]
         if len(filtered_formats) == 0:
             self.warning("failed to find video format that matches bitrate filters, picking best format", {"formats": loggable_formats})
-            filtered_formats = [f for f in formats if f.get("quality") is not None]
+            filtered_formats = quality_formats
 
-        # The get default is set because sometimes the key is missing and other times its just equal to "none"
-        video_formats = [f for f in filtered_formats if f.get("vcodec", "none") != "none"]
+        video_formats = [f for f in filtered_formats if (f.get("vcodec") or "none") != "none"]
         best_video = max(video_formats, default=None, key=lambda f: f["quality"])
 
         if best_video is not None:
             self.debug("selected video format", { "video": best_video })
             yield best_video
 
-            if best_video.get("acodec", "none") == "none":
+            if (best_video.get("acodec") or "none") == "none":
                 # we don't use the format filtering for audio only because they have low bitrates
-                audio_formats = [f for f in formats if f.get("vcodec", "none") == "none" and f.get("acodec", "none") != "none"]
+                audio_formats = [f for f in formats if (f.get("vcodec") or "none") == "none" and (f.get("acodec") or "none") != "none"]
                 best_audio = max(audio_formats, default=None, key=lambda f: f["quality"])
                 self.debug("selected audio format", { "audio": best_audio })
                 if best_audio is not None:

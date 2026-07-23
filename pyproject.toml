@@ -5,7 +5,7 @@ description = "A common wraper around ytdl"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "yt-dlp[default]",
+    "yt-dlp[default]==2026.7.21.234255.dev0",
 ]
 
 # linter
