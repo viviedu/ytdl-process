@@ -138,23 +138,31 @@ class Handler(BaseHTTPRequestHandler):
         ]
         self.debug("parsed formats", {"formats": loggable_formats})
 
-        quality_formats = [f for f in formats if f.get("quality") is not None and f.get("quality") != -1]
+        def format_contains_quality(f: dict):
+            return bool(f.get("quality") is not None and f.get("quality") != -1)
+        def format_within_bitrate_limits(f: dict):
+            return bool(MIN_DOWNLOAD_BIT_RATE_KB <= float(f.get("tbr") or 0) <= MAX_DOWNLOAD_BIT_RATE_KB)
+        def format_contains_video_track(f: dict):
+            return bool((f.get("vcodec") or "none") != "none")
+        def format_contains_audio_track(f: dict):
+            return bool((f.get("acodec") or "none") != "none")
 
-        filtered_formats = [f for f in quality_formats if MIN_DOWNLOAD_BIT_RATE_KB <= float(f.get("tbr") or 0) <= MAX_DOWNLOAD_BIT_RATE_KB]
+        quality_formats = [f for f in formats if format_contains_quality(f)]
+        filtered_formats = [f for f in quality_formats if format_within_bitrate_limits(f)]
         if len(filtered_formats) == 0:
             self.warning("failed to find video format that matches bitrate filters, picking best format", {"formats": loggable_formats})
             filtered_formats = quality_formats
 
-        video_formats = [f for f in filtered_formats if (f.get("vcodec") or "none") != "none"]
+        video_formats = [f for f in filtered_formats if format_contains_video_track(f)]
         best_video = max(video_formats, default=None, key=lambda f: f["quality"])
 
         if best_video is not None:
             self.debug("selected video format", { "video": best_video })
             yield best_video
 
-            if (best_video.get("acodec") or "none") == "none":
+            if not format_contains_audio_track(best_video):
                 # we don't use the format filtering for audio only because they have low bitrates
-                audio_formats = [f for f in formats if (f.get("vcodec") or "none") == "none" and (f.get("acodec") or "none") != "none"]
+                audio_formats = [f for f in quality_formats if format_contains_audio_track(f) and not format_contains_video_track(f)]
                 best_audio = max(audio_formats, default=None, key=lambda f: f["quality"])
                 self.debug("selected audio format", { "audio": best_audio })
                 if best_audio is not None:
