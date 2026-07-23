@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import traceback
 import shutil
 import argparse
 import json
@@ -10,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from sys import stderr
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from yt_dlp import YoutubeDL
 
@@ -167,9 +168,7 @@ class Handler(BaseHTTPRequestHandler):
         """
         duration = info.get("duration")
         if duration and duration > MAX_DOWNLOAD_DURATION_SECONDS:
-            msg = "The video is too long"
-            self.warning(msg, extra_info={"url": info.get("webpage_url"), "duration": duration})
-            return msg
+            raise Exception('video_link is over 1 hour')
 
     def download_track(self, ytdl_opts: dict, url: str):
         # Prefer split tracks (bestvideo,bestaudio) for higher quality (e.g. YouTube caps combined at 720p),
@@ -179,9 +178,11 @@ class Handler(BaseHTTPRequestHandler):
         with YoutubeDL(ytdl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
 
-        requested_downloads = info["requested_downloads"]
-        self.debug("track downloaded successfully", extra_info={ "url": url })
+        if "requested_downloads" not in info:
+            raise Exception('failed to download any tracks')
 
+        self.debug("track downloaded successfully", extra_info={ "url": url })
+        requested_downloads = info["requested_downloads"]
         if len(requested_downloads) == 2:
             is_first_download_a_video: bool = requested_downloads[0]["video_ext"] != "none"
             video_file = requested_downloads[0] if is_first_download_a_video else requested_downloads[1]
@@ -253,7 +254,7 @@ class Handler(BaseHTTPRequestHandler):
                 download_res = self.download_track(ydl_opts, qs["url"][0])
                 self.respond(200, download_res)
             except Exception as e:
-                self.respond(500, {"error": str(e)})
+                self.respond(500, {"error": str(e), "trace": traceback.format_exc()})
                 shutil.rmtree(filename, ignore_errors=True)
         else:
             self.respond(500, {"message": "no matching path", "url": url.path})
@@ -264,34 +265,26 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 def cli_download(url: str, proxy: str | None = None):
-    from generate_filtered_extractors import generate_filtered_extractors
-
-    ydl_opts = {
-        "allowed_extractors": generate_filtered_extractors(),
-        "cachedir": False,
-        "fragment_retries": 5,
-        "js_runtimes": {"node": {}},
-        "noplaylist": True,
-        "quiet": True,
-        "retries": float("inf"),
-        "simulate": False,
-        "sleep_requests": 2,
-        "socket_timeout": 120,
-    }
-
+    query = {"url": url}
     if proxy:
-        ydl_opts["proxy"] = proxy
-
-    filename = tempfile.mkdtemp()
-    ydl_opts["outtmpl"] = f"{filename}/%(id)s_%(format_id)s.%(ext)s"
+        query["proxy_url"] = proxy
 
     handler = Handler.__new__(Handler)
-    try:
-        result = handler.download_track(ydl_opts, url)
-        print(json.dumps(result, indent=2))
-    except Exception as e:
-        shutil.rmtree(filename)
-        print(json.dumps({"message": str(e)}), file=sys.stderr)
+    handler.path = "/download?" + urlencode(query)
+
+    response: dict[str, Any] = {}
+
+    def respond(status: int, msg: object):
+        response["status"] = status
+        response["msg"] = msg
+
+    handler.respond = respond
+    handler.do_GET()
+
+    if response.get("status") == 200:
+        print(json.dumps(response["msg"], indent=2))
+    else:
+        print(json.dumps(response.get("msg")), file=sys.stderr)
         sys.exit(1)
 
 
