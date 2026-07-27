@@ -333,10 +333,14 @@ test('processV4 falls back to a plain url track when byte ranges are missing', (
   expect(result.video[0].url).toBe(withoutRanges.url);
 });
 
-test('processV4 does not build seekable manifests for throttled urls', () => {
+// Videos that android_vr and visionos can't play fall back to tv, where every url is throttled.
+// Refusing to wrap those left them unseekable for no good reason - they honour byte ranges.
+test('processV4 builds seekable manifests for throttled urls when that is all youtube offers', () => {
   const throttled = { ...seekableFormat, url: 'https://rr1---sn-example.googlevideo.com/videoplayback?itag=299&n=abc&c=TVHTML5' };
   const result = processV4(makeYtdlOutput([throttled]), '');
-  expect(result.video[0].type).toBe('url');
+  expect(result.video[0].type).toBe('manifest');
+  expect(result.video[0].manifest).toContain('<SegmentList');
+  expect(result.video[0].url).toBe(throttled.url);
 });
 
 test('processV4 leaves combined tracks as plain url tracks', () => {
@@ -412,6 +416,8 @@ test('processV4 falls back to a plain url audio track when byte ranges are missi
   expect(result.audio[0].protocol).toBe('https');
 });
 
+// Unlike video: wrapping the audio too puts two dashdemux instances in the box's split pipeline,
+// and the audio pad then fails to link, killing playback.
 test('processV4 does not wrap throttled m4a urls', () => {
   const throttled = { ...seekableAudioFormat, url: 'https://rr1---sn-example.googlevideo.com/videoplayback?itag=140&n=abc&c=TVHTML5' };
   const result = processV4(makeYtdlOutput([throttled]), '');

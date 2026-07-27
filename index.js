@@ -32,7 +32,8 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
-  '--extractor-args', 'youtube:player-client=android_vr,web_safari,tv',
+  '--extractor-args', 'youtube:player-client=android_vr,visionos,web_safari,tv',
+  '--js-runtimes', 'node',
   '-J'
 ];
 
@@ -152,9 +153,9 @@ const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, he
   );
 };
 
-// Throttled googlevideo URLs (those with an `n` param, from web/tv clients) ignore deep Range requests
-// and serve from offset 0, which breaks seeking - so we only wrap un-throttled (android_vr) URLs.
-// Scoped to googlevideo: an `n` param on another CDN says nothing about throttling.
+// Detects the `n` throttle param, which android_vr and visionos URLs don't carry. This is only a
+// preference (see makeVideoTrackSort) - throttled URLs are still wrapped in manifests, they honour
+// byte ranges fine. Scoped to googlevideo: an `n` param on another CDN means nothing.
 function isThrottledUrl(url) {
   if (typeof url !== 'string' || !/[?&]n=/.test(url)) {
     return false;
@@ -168,7 +169,7 @@ function isThrottledUrl(url) {
 }
 
 function canBuildSeekableManifest({ url, protocol, init_range, index_range }) {
-  return Boolean(url && protocol && protocol.includes('https') && !isThrottledUrl(url) && init_range && index_range);
+  return Boolean(url && protocol && protocol.includes('https') && init_range && index_range);
 }
 
 module.exports.isPlaylist = (url) => {
@@ -337,9 +338,8 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
 
     // Wrap single-file https video-only tracks in a SegmentList manifest so they seek via dashdemux
-    // (see generateSegmentListManifest). Throttled URLs are excluded (they ignore Range, see
-    // isThrottledUrl); tracks without ranges fall back to a plain, non-seekable url. Combined tracks
-    // stay plain urls - un-throttled ones seek via qtdemux, throttled ones have no seekable form.
+    // (see generateSegmentListManifest). Tracks without ranges fall back to a plain, non-seekable
+    // url, as do combined tracks.
     if (!combined && canBuildSeekableManifest(formatInfo)) {
       const manifest = generateSegmentListManifest({ ...formatInfo, duration });
       // Keep the plain url alongside the manifest: type:'manifest' + protocol:'https' is new, so a
@@ -371,7 +371,12 @@ module.exports.processV4 = (output, origin, locales = []) => {
     }
 
     // Route seekable M4A audio through the same DASH path used for HTTPS video tracks.
-    if (ext === 'm4a' && canBuildSeekableManifest(audioTrack)) {
+    // Audio checks the throttle and video doesn't, because:
+    //  1. raw opus already seeks - matroskademux reads the webm Cues index, qtdemux can't seek mp4
+    //     in push mode, so only video needs the manifest
+    //  2. wrapping both puts two dashdemux instances in the box's split pipeline and the audio pad
+    //     then fails to link, killing playback
+    if (ext === 'm4a' && !isThrottledUrl(audio_url) && canBuildSeekableManifest(audioTrack)) {
       const audioManifest = generateSegmentListManifest({ ...audioTrack, duration }, true);
       return { type: 'manifest', acodec, manifest: audioManifest, url: audio_url, format_id: audio_format, protocol: 'https_manifest', language: audio_language };
     }
