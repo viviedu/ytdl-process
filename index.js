@@ -370,13 +370,9 @@ module.exports.processV4 = (output, origin, locales = []) => {
       return { type: 'manifest', acodec, manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
     }
 
-    // Route seekable M4A audio through the same DASH path used for HTTPS video tracks.
-    // Audio checks the throttle and video doesn't, because:
-    //  1. raw opus already seeks - matroskademux reads the webm Cues index, qtdemux can't seek mp4
-    //     in push mode, so only video needs the manifest
-    //  2. wrapping both puts two dashdemux instances in the box's split pipeline and the audio pad
-    //     then fails to link, killing playback
-    if (ext === 'm4a' && !isThrottledUrl(audio_url) && canBuildSeekableManifest(audioTrack)) {
+    // Route seekable M4A audio through the same DASH path as video. This is what makes m4a usable
+    // at all: physical boxes reject raw https+mp4a outright (vivi-box app/ytdl.ts).
+    if (ext === 'm4a' && canBuildSeekableManifest(audioTrack)) {
       const audioManifest = generateSegmentListManifest({ ...audioTrack, duration }, true);
       return { type: 'manifest', acodec, manifest: audioManifest, url: audio_url, format_id: audio_format, protocol: 'https_manifest', language: audio_language };
     }
@@ -483,8 +479,8 @@ function processVideoFormats(formats, isStream, preferUnthrottled = false) {
 // Return < 0 if a is preferred
 // Never return 0, we want track selection to be deterministic!
 //
-// preferUnthrottled is V4-only: it prefers the un-throttled variant of a resolution so it can be
-// served as a seekable manifest (see isThrottledUrl). V3 keeps its historical selection (lower bitrate).
+// preferUnthrottled is V4-only: at the same resolution it prefers the n-less variant. It no longer
+// decides seekability - throttled tracks are wrapped too. V3 keeps its historical selection (lower bitrate).
 function makeVideoTrackSort(preferUnthrottled = false) {
   return function videoTrackSort(a, b) {
     // Prefer English audio

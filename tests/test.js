@@ -416,11 +416,11 @@ test('processV4 falls back to a plain url audio track when byte ranges are missi
   expect(result.audio[0].protocol).toBe('https');
 });
 
-// Unlike video: wrapping the audio too puts two dashdemux instances in the box's split pipeline,
-// and the audio pad then fails to link, killing playback.
-test('processV4 does not wrap throttled m4a urls', () => {
+// Throttled m4a is wrapped like any other: boxes can't play https+mp4a, and a box plays a manifest
+test('processV4 wraps throttled m4a urls', () => {
   const throttled = { ...seekableAudioFormat, url: 'https://rr1---sn-example.googlevideo.com/videoplayback?itag=140&n=abc&c=TVHTML5' };
   const result = processV4(makeYtdlOutput([throttled]), '');
-  expect(result.audio[0].type).toBe('url');
-  expect(result.audio[0].protocol).toBe('https');
+  expect(result.audio[0].type).toBe('manifest');
+  expect(result.audio[0].protocol).toBe('https_manifest');
+  expect(result.audio[0].url).toBe(throttled.url);
 });
