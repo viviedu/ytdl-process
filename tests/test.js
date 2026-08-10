@@ -437,6 +437,29 @@ test('generateSegmentListManifest with isAudio emits an audio/mp4 AdaptationSet 
   expect(manifest).toContain('mediaRange="632-10305225"');
 });
 
+test('generateSegmentListManifest emits one SegmentURL per subsegment when service.py read the sidx', () => {
+  const manifest = generateSegmentListManifest({
+    ...seekableAudioFormat,
+    duration: 634,
+    segment_ranges: ['1572-163551', '163552-325309', '325310-486690'],
+    segment_duration: 440320,
+    segment_timescale: 44100
+  }, true);
+  expect(manifest).toContain('<SegmentList timescale="44100" duration="440320">');
+  expect(manifest).toContain('mediaRange="1572-163551"');
+  expect(manifest).toContain('mediaRange="325310-486690"');
+  expect(manifest.match(/<SegmentURL /g)).toHaveLength(3);
+  // the whole-file range is what the segments replace
+  expect(manifest).not.toContain('mediaRange="632-10305225"');
+});
+
+test('generateSegmentListManifest falls back to the whole-file range when the sidx was unreadable', () => {
+  const manifest = generateSegmentListManifest({ ...seekableAudioFormat, duration: 634, segment_ranges: [] }, true);
+  expect(manifest).toContain('mediaRange="632-10305225"');
+  expect(manifest.match(/<SegmentURL /g)).toHaveLength(1);
+  expect(manifest).toContain('<SegmentList duration="634">');
+});
+
 test('processV4 wraps un-throttled m4a audio in a manifest and lists it before raw tracks', () => {
   const result = processV4(makeYtdlOutput([opusAudioFormat, seekableAudioFormat]), '');
   expect(result.audio).toHaveLength(2);
