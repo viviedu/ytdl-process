@@ -84,6 +84,29 @@ test('videoTrackSort uses format_id as tiebreaker for identical tracks', () => {
   expect([b, a].sort(videoTrackSort)[0]).toBe(a);
 });
 
+test('videoTrackSort prefers m3u8 tracks at the same height when preferM3U8 is set', () => {
+  const sort = makeVideoTrackSort(true, true);
+  const a = { format_id: '96', height: 1080, acodec: 'mp4a.40.2', protocol: 'm3u8_native', tbr: 4000 };
+  const b = { format_id: '137', height: 1080, acodec: 'mp4a.40.2', protocol: 'https', tbr: 1000 };
+  expect([a, b].sort(sort)[0]).toBe(a);
+  expect([b, a].sort(sort)[0]).toBe(a);
+});
+
+test('videoTrackSort never trades resolution for m3u8', () => {
+  const sort = makeVideoTrackSort(true, true);
+  const a = { format_id: '95', height: 720, acodec: 'mp4a.40.2', protocol: 'm3u8_native', tbr: 2000 };
+  const b = { format_id: '137', height: 1080, acodec: 'mp4a.40.2', protocol: 'https', tbr: 4000 };
+  expect([a, b].sort(sort)[0]).toBe(b);
+  expect([b, a].sort(sort)[0]).toBe(b);
+});
+
+test('videoTrackSort without preferM3U8 keeps the lower-tbr preference for mixed protocols', () => {
+  const a = { format_id: '96', height: 1080, acodec: 'mp4a.40.2', protocol: 'm3u8_native', tbr: 4000 };
+  const b = { format_id: '137', height: 1080, acodec: 'mp4a.40.2', protocol: 'https', tbr: 1000 };
+  expect([a, b].sort(videoTrackSort)[0]).toBe(b);
+  expect([b, a].sort(videoTrackSort)[0]).toBe(b);
+});
+
 test('filterVideoFormatCodecs rejects bad format_ids', () => {
   const bad1 = { format_id: 'source', vcodec: 'avc1', acodec: 'opus', protocol: 'https' };
   expect(Boolean(filterVideoFormatCodecs(bad1))).toBe(false);
@@ -348,6 +371,26 @@ test('processV4 leaves combined tracks as plain url tracks', () => {
   const result = processV4(makeYtdlOutput([combined]), '');
   expect(result.video[0].type).toBe('url');
   expect(result.video[0].combined).toBe(true);
+});
+
+test('processV4 picks a same-height m3u8 combined track over https, keeping the wrapped split track', () => {
+  const httpsCombined = { ...seekableFormat, format_id: '22', acodec: 'mp4a.40.2', tbr: 1000 };
+  const m3u8Combined = {
+    ...seekableFormat,
+    format_id: '96',
+    acodec: 'mp4a.40.2',
+    protocol: 'm3u8_native',
+    tbr: 4000,
+    url: 'https://manifest.googlevideo.com/api/manifest/hls_playlist/itag/96/playlist/index.m3u8'
+  };
+  const result = processV4(makeYtdlOutput([httpsCombined, m3u8Combined, seekableFormat]), '');
+  const combinedTracks = result.video.filter((track) => track.combined);
+  expect(combinedTracks).toHaveLength(1);
+  expect(combinedTracks[0].format_id).toBe('96');
+  expect(combinedTracks[0].type).toBe('url');
+  const splitTracks = result.video.filter((track) => !track.combined);
+  expect(splitTracks).toHaveLength(1);
+  expect(splitTracks[0].type).toBe('manifest');
 });
 
 const seekableAudioFormat = {
