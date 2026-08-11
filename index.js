@@ -370,8 +370,8 @@ module.exports.processV4 = (output, origin, locales = []) => {
       return { type: 'manifest', acodec, manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
     }
 
-    // Route seekable M4A audio through the same DASH path as video. This is what makes m4a usable
-    // at all: physical boxes reject raw https+mp4a outright (vivi-box app/ytdl.ts).
+    // Gstreamer can't seek a raw https+mp4a url.
+    // so we wrap it in a DASH format the same way we do for video-only tracks to allow seeking.
     if (ext === 'm4a' && canBuildSeekableManifest(audioTrack)) {
       const audioManifest = generateSegmentListManifest({ ...audioTrack, duration }, true);
       return { type: 'manifest', acodec, manifest: audioManifest, url: audio_url, format_id: audio_format, protocol: 'https_manifest', language: audio_language };
@@ -380,11 +380,11 @@ module.exports.processV4 = (output, origin, locales = []) => {
     return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
   }).filter(Boolean);
 
-  // Seekable manifest tracks first - the physical-box preference. Vivi Display selects strictly
-  // on protocol === 'https', so this order change does not affect what it plays.
+  // Prefer m3u8, then our dash manifests, then everything else.
   const audio = [
+    ...formattedTracks.filter((track) => track.protocol.includes('m3u8')),
     ...formattedTracks.filter((track) => track.protocol === 'https_manifest'),
-    ...formattedTracks.filter((track) => track.protocol !== 'https_manifest')
+    ...formattedTracks.filter((track) => !track.protocol.includes('m3u8') && track.protocol !== 'https_manifest')
   ];
 
   return {

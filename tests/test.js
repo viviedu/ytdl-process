@@ -417,6 +417,16 @@ const opusAudioFormat = {
   index_range: '259-871'
 };
 
+// yt-dlp cannot determine acodec/abr for m3u8 audio tracks, so they are left undefined
+const m3u8AudioFormat = {
+  format_id: '233',
+  vcodec: 'none',
+  protocol: 'm3u8_native',
+  audio_ext: 'mp4',
+  ext: 'mp4',
+  url: 'https://manifest.googlevideo.com/api/manifest/hls_playlist/itag/233/playlist/index.m3u8'
+};
+
 test('generateSegmentListManifest with isAudio emits an audio/mp4 AdaptationSet without dimensions', () => {
   const manifest = generateSegmentListManifest({ ...seekableAudioFormat, duration: 634 }, true);
   expect(manifest).toContain('mimeType="audio/mp4"');
@@ -442,6 +452,18 @@ test('processV4 wraps un-throttled m4a audio in a manifest and lists it before r
   expect(result.audio[1].format_id).toBe('251');
   expect(result.audio[1].type).toBe('url');
   expect(result.audio[1].protocol).toBe('https');
+});
+
+test('processV4 lists m3u8 audio before the wrapped m4a track', () => {
+  const result = processV4(makeYtdlOutput([opusAudioFormat, seekableAudioFormat, m3u8AudioFormat]), '');
+  // m3u8 is natively segmented, so it wins over the manifest we build
+  expect(result.audio[0].format_id).toBe('233');
+  expect(result.audio[0].protocol).toBe('m3u8_native');
+  // the wrapped m4a stays ahead of the raw tracks, so it is the fallback when there is no m3u8
+  expect(result.audio[1].format_id).toBe('140');
+  expect(result.audio[1].protocol).toBe('https_manifest');
+  // Vivi Display picks strictly on protocol === 'https', which is still the opus track
+  expect(result.audio.find((track) => track.protocol === 'https').format_id).toBe('251');
 });
 
 test('processV4 leaves webm/opus audio as a plain url track even with byte ranges', () => {
