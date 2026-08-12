@@ -324,7 +324,7 @@ module.exports.processV4 = (output, origin, locales = []) => {
   const duration = data.duration || 0;
   const subtitlesForAllLocales = getSubtitlesForAllLocales(origin, subtitles, automatic_captions);
   const title = data.title || '';
-  const processedVideoTracks = processVideoFormats(formats, !data.duration, true);
+  const processedVideoTracks = processVideoFormats(formats, !data.duration, true, true);
   const thumbnail = data.thumbnail || '';
 
   const audioTracks = processAudioFormats(formats, true);
@@ -370,8 +370,8 @@ module.exports.processV4 = (output, origin, locales = []) => {
       return { type: 'manifest', acodec, manifest: audioManifest, format_id: audio_format, protocol: audio_protocol, language: audio_language };
     }
 
-    // Route seekable M4A audio through the same DASH path as video. This is what makes m4a usable
-    // at all: physical boxes reject raw https+mp4a outright (vivi-box app/ytdl.ts).
+    // Gstreamer can't seek a raw https+mp4a url.
+    // so we wrap it in a DASH format the same way we do for video-only tracks to allow seeking.
     if (ext === 'm4a' && canBuildSeekableManifest(audioTrack)) {
       const audioManifest = generateSegmentListManifest({ ...audioTrack, duration }, true);
       return { type: 'manifest', acodec, manifest: audioManifest, url: audio_url, format_id: audio_format, protocol: 'https_manifest', language: audio_language };
@@ -380,11 +380,11 @@ module.exports.processV4 = (output, origin, locales = []) => {
     return { type: 'url', acodec, url: audio_url, format_id: audio_format, protocol: audio_protocol, language: audio_language };
   }).filter(Boolean);
 
-  // Seekable manifest tracks first - the physical-box preference. Vivi Display selects strictly
-  // on protocol === 'https', so this order change does not affect what it plays.
+  // Prefer m3u8, then our dash manifests, then everything else.
   const audio = [
+    ...formattedTracks.filter((track) => track.protocol.includes('m3u8')),
     ...formattedTracks.filter((track) => track.protocol === 'https_manifest'),
-    ...formattedTracks.filter((track) => track.protocol !== 'https_manifest')
+    ...formattedTracks.filter((track) => !track.protocol.includes('m3u8') && track.protocol !== 'https_manifest')
   ];
 
   return {
@@ -433,12 +433,12 @@ function isSilentVideo(audio_bitrate) {
   return audio_bitrate && audio_bitrate <= 10;
 }
 
-function processVideoFormats(formats, isStream, preferUnthrottled = false) {
+function processVideoFormats(formats, isStream, preferUnthrottled = false, preferM3U8 = false) {
   // Filter out tracks that are not suitable (see comments below)
   const filteredFormats = formats.filter((format) => filterVideoFormatCodecs(format) && filterVideoFormatFps(format));
 
   // Sort the tracks because .find will return the first match
-  filteredFormats.sort(makeVideoTrackSort(preferUnthrottled));
+  filteredFormats.sort(makeVideoTrackSort(preferUnthrottled, preferM3U8));
 
   // If you change track selection, then all permutations of the following should ideally be tested:
   //    - signage, play content
@@ -460,7 +460,7 @@ function processVideoFormats(formats, isStream, preferUnthrottled = false) {
     tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
   } else {
     // Non-livestreams
-        
+
     // Find the best combined and split track for each quality level
     tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec !== 'none')));
     tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec === 'none')));
@@ -481,7 +481,8 @@ function processVideoFormats(formats, isStream, preferUnthrottled = false) {
 //
 // preferUnthrottled is V4-only: at the same resolution it prefers the n-less variant. It no longer
 // decides seekability - throttled tracks are wrapped too. V3 keeps its historical selection (lower bitrate).
-function makeVideoTrackSort(preferUnthrottled = false) {
+// preferM3U8 is also V4-only: at the same resolution it prefers native m3u8 over plain https.
+function makeVideoTrackSort(preferUnthrottled = false, preferM3U8 = false) {
   return function videoTrackSort(a, b) {
     // Prefer English audio
     const englishAudioTag = 'original:lang%3Den';
@@ -495,6 +496,18 @@ function makeVideoTrackSort(preferUnthrottled = false) {
     // Prefer tracks with higher resolution
     if (a.height !== b.height) {
       return b.height - a.height;
+    }
+
+    // At the same height, prefer native m3u8 over plain https
+    if (preferM3U8) {
+      const aM3U8 = a.protocol.includes('m3u8');
+      const bM3U8 = b.protocol.includes('m3u8');
+      if (aM3U8 && !bM3U8) {
+        return -1;
+      }
+      if (!aM3U8 && bM3U8) {
+        return 1;
+      }
     }
 
     // Only compared between plain https tracks: manifest urls (m3u8/dash) never carry the n param,
@@ -629,7 +642,7 @@ function audioTrackSort(a, b) {
   if (a_non_english && !b_non_english) {
     return 1;
   }
-  
+
   if (!a_non_english && b_non_english) {
     return -1;
   }
@@ -640,7 +653,7 @@ function audioTrackSort(a, b) {
   if (a_acodec.includes('opus') && !b_bcodec.includes('opus')) {
     return -1;
   }
-  
+
   if (!a_acodec.includes('opus') && b_bcodec.includes('opus')) {
     return 1;
   }
@@ -651,7 +664,7 @@ function audioTrackSort(a, b) {
   if (a_abr != b_abr) {
     return b_abr - a_abr;
   }
-  
+
   // Sort on format_id, which is guaranteed to be unique per track
   return a.format_id < b.format_id ? -1 : 1;
 }
