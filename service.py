@@ -4,8 +4,6 @@ import traceback
 import shutil
 import argparse
 import json
-import re
-import struct
 import sys
 import tempfile
 import threading
@@ -14,7 +12,6 @@ from socketserver import ThreadingMixIn
 from sys import stderr
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
-from urllib.request import ProxyHandler, Request, build_opener
 
 from yt_dlp import YoutubeDL
 
@@ -24,9 +21,6 @@ MAX_DOWNLOAD_BIT_RATE_KB = 4000  # 4Mbps
 MIN_DOWNLOAD_BIT_RATE_KB = 1000  # 1Mbps
 
 MAX_DOWNLOAD_DURATION_SECONDS = 60 * 60  # 1 hour
-
-# The sidx read sits in the resolve path, so it gets a short leash.
-SIDX_FETCH_TIMEOUT_SECONDS = 5
 
 # Each request is handled on its own thread, so captured ranges live in a thread-local: a fresh dict
 # for the duration of each /process extraction, None otherwise.
@@ -66,94 +60,6 @@ def inject_byte_ranges(info, ranges: dict) -> None:
         pair = ranges.get(str(f.get("format_id", "")).split("-")[0])
         if pair:
             f["init_range"], f["index_range"] = pair
-
-
-def parse_sidx(data: bytes) -> tuple[int, int, list[tuple[int, int]]]:
-    """Parse an ISO/IEC 14496-12 SegmentIndexBox into (timescale, first_offset, entries).
-
-    Entries are (referenced_size, subsegment_duration). The box holds sizes, not offsets: the first
-    subsegment starts first_offset bytes past the end of the box, and each one follows the previous.
-    """
-    _size, box_type = struct.unpack_from(">I4s", data, 0)
-    if box_type != b"sidx":
-        raise ValueError(f"expected a sidx box, got {box_type!r}")
-
-    version = data[8]
-    pos = 12  # size, type, version, flags
-    _reference_id, timescale = struct.unpack_from(">II", data, pos)
-    pos += 8
-    if version == 0:
-        _earliest_pts, first_offset = struct.unpack_from(">II", data, pos)
-        pos += 8
-    else:
-        _earliest_pts, first_offset = struct.unpack_from(">QQ", data, pos)
-        pos += 16
-    pos += 2  # reserved
-
-    (count,) = struct.unpack_from(">H", data, pos)
-    pos += 2
-    entries = []
-    for _ in range(count):
-        word, subsegment_duration, _sap = struct.unpack_from(">III", data, pos)
-        pos += 12
-        if word >> 31:
-            raise ValueError("sidx references another sidx rather than media")
-        entries.append((word & 0x7FFFFFFF, subsegment_duration))
-    return timescale, first_offset, entries
-
-
-def build_segment_ranges(url: str, index_range: str, proxy: str | None) -> dict | None:
-    """Read the track's sidx and return the byte range of every subsegment.
-
-    Returns None when the index cannot be turned into a list we trust, which leaves the format
-    alone and index.js emits its single whole-file range instead.
-    """
-    index_start, index_end = (int(part) for part in index_range.split("-"))
-    request = Request(url, headers={"Range": f"bytes={index_start}-{index_end}"})
-    opener = build_opener(ProxyHandler({"http": proxy, "https": proxy})) if proxy else build_opener()
-    with opener.open(request, timeout=SIDX_FETCH_TIMEOUT_SECONDS) as response:
-        timescale, first_offset, entries = parse_sidx(response.read())
-
-    # One duration attribute covers every SegmentURL, so subsegments that are not uniform would
-    # drift against the media timestamps. The last one is short on most tracks and the period
-    # duration caps it, so it is excluded from the check.
-    durations = {duration for _, duration in entries[:-1]}
-    if len(durations) != 1:
-        return None
-
-    offset = index_end + 1 + first_offset
-    segment_ranges = []
-    for size, _duration in entries:
-        segment_ranges.append(f"{offset}-{offset + size - 1}")
-        offset += size
-
-    # The sizes must account for every byte after the index, or the offsets are wrong somewhere.
-    content_length = re.search(r"[?&]clen=(\d+)", url)
-    if content_length and offset != int(content_length.group(1)):
-        raise ValueError(f"sidx sizes end at {offset}, expected {content_length.group(1)}")
-
-    return {"timescale": timescale, "duration": durations.pop(), "ranges": segment_ranges}
-
-
-def inject_segment_ranges(info, proxy: str | None) -> None:
-    """Attach per-subsegment byte ranges so index.js can emit a multi-segment SegmentList.
-
-    A single whole-file range is one long-lived connection that googlevideo paces for the length of
-    the video; a request per subsegment gets a fresh draw and its own retry. Costs one range fetch
-    per track, so it is limited to the m4a audio formats index.js actually wraps.
-    """
-    for f in (info or {}).get("formats") or []:
-        if f.get("vcodec") != "none" or f.get("ext") != "m4a" or not f.get("index_range"):
-            continue
-        try:
-            segments = build_segment_ranges(f["url"], f["index_range"], proxy)
-        except Exception as ex:
-            print(json.dumps({"message": "sidx read failed", "level": "warning", "extra_info": {"format_id": f.get("format_id"), "error": repr(ex)}}), file=stderr)
-            continue
-        if segments:
-            f["segment_timescale"] = segments["timescale"]
-            f["segment_duration"] = segments["duration"]
-            f["segment_ranges"] = segments["ranges"]
 
 
 def _install_byte_range_capture():
@@ -216,7 +122,6 @@ class Handler(BaseHTTPRequestHandler):
                 info = ydl.extract_info(url, download=False)
 
             inject_byte_ranges(info, _captured_ranges.ranges)
-            inject_segment_ranges(info, ytdl_opts.get("proxy"))
             self.respond(200, ydl.sanitize_info(info))
         except Exception as ex:
             self.respond(500, {"message": "ydl exception: {}".format(repr(ex))})
