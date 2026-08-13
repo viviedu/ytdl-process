@@ -115,9 +115,7 @@ const SEGMENT_END_SENTINEL = 9999999999;
 // URLs are all query, so a stripped BaseURL 404s. The full url in SegmentURL attributes preserves it.
 // Seeking works because the sidx sits at the front of the media range. init_range comes from service.py.
 // isAudio emits an audio/mp4 AdaptationSet instead; YouTube m4a shares the mp4s' sidx layout.
-// segment_ranges, also from service.py, replaces the single range with one per subsegment so each
-// fetch is its own request rather than one connection googlevideo paces for the whole video.
-const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, height, tbr, abr, ext, duration, init_range, segment_ranges, segment_duration, segment_timescale }, isAudio = false) => {
+const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, height, tbr, abr, ext, duration, init_range }, isAudio = false) => {
   const durationString = generateDurationString(duration);
   const bandwidth = Math.round(((tbr || abr) || 0) * 1000) || DEFAULT_BANDWIDTH;
   const codec = isAudio ? acodec : vcodec;
@@ -130,13 +128,6 @@ const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, he
   const clen = parseContentLength(url);
   const mediaEnd = clen ? clen - 1 : SEGMENT_END_SENTINEL;
   const urlAttr = escapeXmlAttr(url);
-  const segmented = Array.isArray(segment_ranges) && segment_ranges.length > 1;
-  const segmentListAttrs = segmented
-    ? `timescale="${segment_timescale}" duration="${segment_duration}"`
-    : `duration="${Math.max(1, Math.round(duration))}"`;
-  const segmentUrls = (segmented ? segment_ranges : [`${mediaStart}-${mediaEnd}`])
-    .map((range) => `<SegmentURL media="${urlAttr}" mediaRange="${range}"/>`)
-    .join('\n              ');
 
   return (
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -151,9 +142,9 @@ const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, he
       <Period duration="${durationString}">
         <AdaptationSet mimeType="${mimeType}" contentType="${contentType}" subsegmentAlignment="true">
           <Representation id="${escapeXmlAttr(format_id)}"${codecsAttr}${sizeAttrs} bandwidth="${bandwidth}">
-            <SegmentList ${segmentListAttrs}>
+            <SegmentList duration="${Math.max(1, Math.round(duration))}">
               <Initialization sourceURL="${urlAttr}" range="${init_range}"/>
-              ${segmentUrls}
+              <SegmentURL media="${urlAttr}" mediaRange="${mediaStart}-${mediaEnd}"/>
             </SegmentList>
           </Representation>
         </AdaptationSet>

@@ -1,8 +1,6 @@
-import struct
 import unittest
-from unittest import mock
 
-from service import build_segment_ranges, collect_byte_ranges, inject_byte_ranges, inject_segment_ranges, parse_sidx
+from service import collect_byte_ranges, inject_byte_ranges
 
 
 class ByteRangeHookDriftGuardTest(unittest.TestCase):
@@ -63,98 +61,6 @@ class ByteRangeCaptureTest(unittest.TestCase):
     def test_inject_handles_missing_info_or_formats(self):
         inject_byte_ranges(None, {"299": ("0-740", "741-2248")})
         inject_byte_ranges({}, {"299": ("0-740", "741-2248")})
-
-
-def build_sidx(entries, timescale=44100, first_offset=0, version=0) -> bytes:
-    """A SegmentIndexBox holding the given (referenced_size, subsegment_duration) entries."""
-    header = struct.pack(">II", 0, timescale)
-    header += struct.pack(">II", 0, first_offset) if version == 0 else struct.pack(">QQ", 0, first_offset)
-    header += struct.pack(">HH", 0, len(entries))
-    body = b"".join(struct.pack(">III", size, duration, 0) for size, duration in entries)
-    size = 12 + len(header) + len(body)
-    return struct.pack(">I4sB3s", size, b"sidx", version, b"\0\0\0") + header + body
-
-
-class SidxParseTest(unittest.TestCase):
-    def test_parses_a_version_0_box(self):
-        timescale, first_offset, entries = parse_sidx(build_sidx([(100, 10), (200, 10)]))
-        self.assertEqual((timescale, first_offset), (44100, 0))
-        self.assertEqual(entries, [(100, 10), (200, 10)])
-
-    def test_parses_a_version_1_box(self):
-        timescale, first_offset, entries = parse_sidx(build_sidx([(100, 10)], version=1, first_offset=8))
-        self.assertEqual((timescale, first_offset), (44100, 8))
-        self.assertEqual(entries, [(100, 10)])
-
-    def test_rejects_a_hierarchical_index(self):
-        # reference_type 1 means the entry points at another sidx, so the sizes are not media
-        nested = struct.pack(">I4sB3sIIIIHH", 44, b"sidx", 0, b"\0\0\0", 0, 44100, 0, 0, 0, 1) + struct.pack(">III", 1 << 31 | 100, 10, 0)
-        with self.assertRaises(ValueError):
-            parse_sidx(nested)
-
-    def test_rejects_a_box_that_is_not_a_sidx(self):
-        with self.assertRaises(ValueError):
-            parse_sidx(struct.pack(">I4s", 8, b"moov"))
-
-
-class SegmentRangeTest(unittest.TestCase):
-    def _with_sidx(self, data):
-        opener = mock.MagicMock()
-        opener.open.return_value.__enter__.return_value.read.return_value = data
-        return mock.patch("service.build_opener", return_value=opener), opener
-
-    def test_ranges_run_from_the_end_of_the_index_to_the_end_of_the_file(self):
-        patcher, _ = self._with_sidx(build_sidx([(100, 10), (200, 10), (50, 7)]))
-        with patcher:
-            segments = build_segment_ranges("https://x/videoplayback?clen=2286", "632-1935", None)
-        assert segments is not None
-        # first subsegment starts at index_end + 1 + first_offset, each one follows the previous
-        self.assertEqual(segments["ranges"], ["1936-2035", "2036-2235", "2236-2285"])
-        self.assertEqual((segments["timescale"], segments["duration"]), (44100, 10))
-
-    def test_declines_when_subsegments_are_not_uniform(self):
-        # a single duration attribute covers every SegmentURL, so uneven entries would drift
-        patcher, _ = self._with_sidx(build_sidx([(100, 10), (200, 13), (50, 7)]))
-        with patcher:
-            self.assertIsNone(build_segment_ranges("https://x/videoplayback", "632-1935", None))
-
-    def test_raises_when_the_sizes_do_not_reach_the_end_of_the_file(self):
-        patcher, _ = self._with_sidx(build_sidx([(100, 10), (200, 10)]))
-        with patcher, self.assertRaises(ValueError):
-            build_segment_ranges("https://x/videoplayback?clen=999999", "632-1935", None)
-
-    def test_asks_for_exactly_the_index_range(self):
-        patcher, opener = self._with_sidx(build_sidx([(100, 10), (200, 10)]))
-        with patcher:
-            build_segment_ranges("https://x/videoplayback", "632-1935", None)
-        self.assertEqual(opener.open.call_args[0][0].headers["Range"], "bytes=632-1935")
-
-
-class SegmentRangeInjectionTest(unittest.TestCase):
-    def test_only_touches_m4a_audio_that_has_an_index(self):
-        info = {
-            "formats": [
-                {"format_id": "140", "vcodec": "none", "ext": "m4a", "index_range": "632-1935", "url": "https://x/a"},
-                {"format_id": "251", "vcodec": "none", "ext": "webm", "index_range": "632-1935", "url": "https://x/b"},  # no sidx in matroska
-                {"format_id": "137", "vcodec": "avc1", "ext": "mp4", "index_range": "632-1935", "url": "https://x/c"},  # video is not starved
-                {"format_id": "139", "vcodec": "none", "ext": "m4a", "url": "https://x/d"},  # no index captured
-            ]
-        }
-        with mock.patch("service.build_segment_ranges", return_value={"timescale": 44100, "duration": 10, "ranges": ["1936-2035"]}) as build:
-            inject_segment_ranges(info, None)
-        self.assertEqual([call[0][0] for call in build.call_args_list], ["https://x/a"])
-        self.assertEqual(info["formats"][0]["segment_ranges"], ["1936-2035"])
-        self.assertNotIn("segment_ranges", info["formats"][1])
-
-    def test_a_failed_read_leaves_the_format_alone(self):
-        info = {"formats": [{"format_id": "140", "vcodec": "none", "ext": "m4a", "index_range": "632-1935", "url": "https://x/a"}]}
-        with mock.patch("service.build_segment_ranges", side_effect=OSError("timed out")):
-            inject_segment_ranges(info, None)
-        self.assertNotIn("segment_ranges", info["formats"][0])
-
-    def test_handles_missing_info_or_formats(self):
-        inject_segment_ranges(None, None)
-        inject_segment_ranges({}, None)
 
 
 if __name__ == "__main__":
