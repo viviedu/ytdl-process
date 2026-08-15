@@ -274,10 +274,11 @@ test('generateSegmentListManifest emits a SegmentList with init + media byte ran
   // init = ftyp+moov (from init_range); media = just after it to clen-1
   expect(manifest).toContain('range="0-740"');
   expect(manifest).toContain('mediaRange="741-999"');
-  // the full query MUST survive (old dashdemux drops <BaseURL> queries; this path keeps them),
-  // xml-escaped inside the attribute
-  expect(manifest).toContain('sourceURL="https://example.googlevideo.com/videoplayback?itag=134&amp;clen=1000&amp;a=b"');
-  expect(manifest).toContain('media="https://example.googlevideo.com/videoplayback?itag=134&amp;clen=1000&amp;a=b"');
+  // the full query MUST survive: stated in <BaseURL>, where CDATA keeps it raw. dashdemux lifts
+  // the query into stream->queryURL and reattaches it to every fragment uri.
+  expect(manifest).toContain('<BaseURL><![CDATA[https://example.googlevideo.com/videoplayback?itag=134&clen=1000&a=b]]></BaseURL>');
+  // the segments inherit it rather than repeating it
+  expect(manifest).not.toContain('<SegmentURL media=');
   expect(manifest).toContain('codecs="avc1.4d401e"');
   expect(manifest).toContain('width="426" height="240"');
   expect(manifest).toContain('bandwidth="118000"');
@@ -310,8 +311,8 @@ test('generateSegmentListManifest escapes xml-special characters in attributes',
   });
   expect(manifest).toContain('id="hls&amp;&lt;&quot;&gt;-1"');
   expect(manifest).toContain('codecs="avc1&quot;x"');
-  // the `&` in the url is escaped in the attribute (and never appears raw)
-  expect(manifest).toContain('media="https://cdn.example.com/v.mp4?a=1&amp;b=2"');
+  // the url is no longer in an attribute, so CDATA carries it raw without breaking well-formedness
+  expect(manifest).toContain('<BaseURL><![CDATA[https://cdn.example.com/v.mp4?a=1&b=2]]></BaseURL>');
 });
 
 // processV4 builds seekable SegmentList manifests from the init_range/index_range byte ranges
@@ -341,7 +342,7 @@ test('processV4 synchronously builds a SegmentList manifest track from injected 
   expect(result.video[0].type).toBe('manifest');
   expect(result.video[0].manifest).toContain('<SegmentList');
   expect(result.video[0].manifest).toContain('range="0-740"');
-  expect(result.video[0].manifest).toContain('<SegmentURL media=');
+  expect(result.video[0].manifest).toContain('<SegmentURL mediaRange=');
   // protocol stays 'https' on a manifest track (a combination older consumers never saw), so the
   // plain url is kept alongside the manifest: a box branching on protocol can still play something
   expect(result.video[0].url).toBe(seekableFormat.url);
@@ -458,6 +459,39 @@ test('generateSegmentListManifest falls back to the whole-file range when the si
   expect(manifest).toContain('mediaRange="632-10305225"');
   expect(manifest.match(/<SegmentURL /g)).toHaveLength(1);
   expect(manifest).toContain('<SegmentList duration="634">');
+});
+
+// The reason this branch exists: a googlevideo url is ~1.3KB, so repeating it per segment is what
+// made a long video's manifest tens of MB in redis. Segment count must not move the url count.
+test('generateSegmentListManifest keeps the url count flat however many segments there are', () => {
+  const ranges = Array.from({ length: 4297 }, (_, i) => `${52319 + i * 100}-${52418 + i * 100}`);
+  const manifest = generateSegmentListManifest({
+    ...seekableAudioFormat,
+    duration: 42895,
+    segment_ranges: ranges,
+    segment_duration: 440320,
+    segment_timescale: 44100
+  }, true);
+  expect(manifest.match(/<SegmentURL /g)).toHaveLength(4297);
+  // twice, and only twice, at any segment count: <BaseURL> (raw, in CDATA) and <Initialization
+  // sourceURL=> (xml-escaped). Count the host+path, which is identical under both encodings.
+  expect(manifest.match(/googlevideo\.com\/videoplayback/g)).toHaveLength(2);
+  expect(manifest.length).toBeLessThan(250000); // the repeated-url encoding is ~5.9MB here
+});
+
+// gst_dash_demux_stream_update_headers_info builds header_uri from the (query-stripped) baseURL and
+// never applies stream->queryURL, unlike the media path. A relative <Initialization> therefore
+// requests the init segment with no sig/expire, googlevideo 403s, and no video plays at all.
+// Verified broken on gstreamer 1.20.7 - do not "tidy" this attribute away.
+test('generateSegmentListManifest keeps sourceURL on Initialization so the init request is signed', () => {
+  const manifest = generateSegmentListManifest({
+    ...seekableAudioFormat,
+    duration: 634,
+    segment_ranges: ['1572-163551', '163552-325309'],
+    segment_duration: 440320,
+    segment_timescale: 44100
+  }, true);
+  expect(manifest).toContain(`<Initialization sourceURL="${seekableAudioFormat.url.replace(/&/g, '&amp;')}" range=`);
 });
 
 test('processV4 wraps un-throttled m4a audio in a manifest and lists it before raw tracks', () => {
