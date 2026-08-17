@@ -129,7 +129,7 @@ const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, he
     : `duration="${Math.max(1, Math.round(duration))}"`;
   const segmentUrls = (segmented ? segment_ranges : [`${mediaStart}-${mediaEnd}`])
     .map((range) => `<SegmentURL mediaRange="${range}"/>`)
-    .join('\n              ');
+    .join('\n');
 
   return (
     `<?xml version="1.0" encoding="UTF-8"?>
