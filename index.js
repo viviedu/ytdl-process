@@ -108,26 +108,9 @@ const parseContentLength = (url) => {
 // Fallback media-range end when clen is absent; googlevideo clamps an over-long range to the real length.
 const SEGMENT_END_SENTINEL = 9999999999;
 
-// YouTube video tracks are now single-file `https` URLs with no fragments; gstreamer can't seek them
-// as a raw URL (qtdemux rejects the flushing seek in push mode). Wrapping in a DASH manifest routes
-// them through dashdemux, which seeks via byte-range requests. Still a SegmentList rather than
-// SegmentBase: dashdemux only bounds a forward-playback range request per *fragment*, so one fragment
-// means one request for the rest of the file, which is the connection googlevideo paces (gstdashdemux.c
-// sets range_end to the fragment end unless rate < 0, and its sidx-bounded chunking is video+trickmode
-// only). More SegmentURLs is what keeps each audio fetch bounded and independently retryable.
-// The url is stated once in <BaseURL> instead of on every segment: dashdemux lifts the query off it
-// into stream->queryURL (gst_mpd_helper_combine_urls) and reattaches it to every *fragment* uri
-// (gst_mpd_client_get_next_fragment), so a <SegmentURL> needs no media attribute - mediaRange is read
-// independently of media, leaving the fragment structure unchanged.
-// <Initialization> MUST keep its sourceURL, though: the header path does NOT reattach the query.
-// gst_dash_demux_stream_update_headers_info builds header_uri as gst_uri_join_strings(baseURL, path)
-// with baseURL already query-stripped, and queryURL appears nowhere in gstdashdemux.c. A relative
-// Initialization therefore fetches the init segment with no expire/sig/sparams - googlevideo 403s,
-// there is no moov, and nothing plays. Verified broken on 1.20.7. Costs ~1.3KB once per manifest.
-// Seeking works because the sidx sits at the front of the media range. init_range comes from service.py.
-// isAudio emits an audio/mp4 AdaptationSet instead; YouTube m4a shares the mp4s' sidx layout.
-// segment_ranges, also from service.py, replaces the single range with one per subsegment so each
-// fetch is its own request rather than one connection googlevideo paces for the whole video.
+// YouTube video tracks are now single-file `https` URLs with no fragments 
+// gstreamer can't seek these as a raw URL.
+// So we need to extract this wrap it in a DASH manifest that routes them through dashdemux.
 const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, height, tbr, abr, ext, duration, init_range, segment_ranges, segment_duration, segment_timescale }, isAudio = false) => {
   const durationString = generateDurationString(duration);
   const bandwidth = Math.round(((tbr || abr) || 0) * 1000) || DEFAULT_BANDWIDTH;
