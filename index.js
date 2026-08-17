@@ -108,14 +108,10 @@ const parseContentLength = (url) => {
 // Fallback media-range end when clen is absent; googlevideo clamps an over-long range to the real length.
 const SEGMENT_END_SENTINEL = 9999999999;
 
-// YouTube video tracks are now single-file `https` URLs with no fragments; gstreamer can't seek them
-// as a raw URL (qtdemux rejects the flushing seek in push mode). Wrapping in a DASH manifest routes
-// them through dashdemux, which seeks via byte-range requests. Uses a single-segment SegmentList, not
-// SegmentBase/BaseURL: the box's legacy dashdemux drops the query string from <BaseURL>, and YouTube
-// URLs are all query, so a stripped BaseURL 404s. The full url in SegmentURL attributes preserves it.
-// Seeking works because the sidx sits at the front of the media range. init_range comes from service.py.
-// isAudio emits an audio/mp4 AdaptationSet instead; YouTube m4a shares the mp4s' sidx layout.
-const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, height, tbr, abr, ext, duration, init_range }, isAudio = false) => {
+// YouTube video tracks are now single-file `https` URLs with no fragments 
+// gstreamer can't seek these as a raw URL.
+// So we need to extract this wrap it in a DASH manifest that routes them through dashdemux.
+const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, height, tbr, abr, ext, duration, init_range, segment_ranges, segment_duration, segment_timescale }, isAudio = false) => {
   const durationString = generateDurationString(duration);
   const bandwidth = Math.round(((tbr || abr) || 0) * 1000) || DEFAULT_BANDWIDTH;
   const codec = isAudio ? acodec : vcodec;
@@ -127,7 +123,13 @@ const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, he
   const mediaStart = Number.isFinite(initEnd) ? initEnd + 1 : 0;
   const clen = parseContentLength(url);
   const mediaEnd = clen ? clen - 1 : SEGMENT_END_SENTINEL;
-  const urlAttr = escapeXmlAttr(url);
+  const segmented = Array.isArray(segment_ranges) && segment_ranges.length > 1;
+  const segmentListAttrs = segmented
+    ? `timescale="${segment_timescale}" duration="${segment_duration}"`
+    : `duration="${Math.max(1, Math.round(duration))}"`;
+  const segmentUrls = (segmented ? segment_ranges : [`${mediaStart}-${mediaEnd}`])
+    .map((range) => `<SegmentURL mediaRange="${range}"/>`)
+    .join('\n');
 
   return (
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -139,12 +141,13 @@ const generateSegmentListManifest = ({ url, format_id, vcodec, acodec, width, he
       minBufferTime="PT2S"
       type="static"
     >
+      <BaseURL><![CDATA[${url}]]></BaseURL>
       <Period duration="${durationString}">
         <AdaptationSet mimeType="${mimeType}" contentType="${contentType}" subsegmentAlignment="true">
           <Representation id="${escapeXmlAttr(format_id)}"${codecsAttr}${sizeAttrs} bandwidth="${bandwidth}">
-            <SegmentList duration="${Math.max(1, Math.round(duration))}">
-              <Initialization sourceURL="${urlAttr}" range="${init_range}"/>
-              <SegmentURL media="${urlAttr}" mediaRange="${mediaStart}-${mediaEnd}"/>
+            <SegmentList ${segmentListAttrs}>
+              <Initialization sourceURL="${escapeXmlAttr(url)}" range="${init_range}"/>
+              ${segmentUrls}
             </SegmentList>
           </Representation>
         </AdaptationSet>
