@@ -32,6 +32,16 @@ module.exports.ARGUMENTS_MULTI_FORMAT = [
   '--write-sub',
   '--write-auto-sub',
   '--no-playlist',
+  '--extractor-args', 'youtube:player-client=web_safari,visionos;fetch_pot=always',
+  '--js-runtimes', 'node',
+  '-J'
+];
+
+module.exports.ARGUMENTS_MULTI_FORMAT_PRE_POT = [
+  '--restrict-filenames',
+  '--write-sub',
+  '--write-auto-sub',
+  '--no-playlist',
   '--extractor-args', 'youtube:player-client=android_vr,visionos,web_safari,tv',
   '--js-runtimes', 'node',
   '-J'

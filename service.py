@@ -304,6 +304,7 @@ class Handler(BaseHTTPRequestHandler):
         qs = parse_qs(url.query)
         proxy_url = qs.get("proxy_url")
         version = qs.get("version", "2")
+        pot = qs.get("pot", "1")
 
         ydl_opts = {
             "allowed_extractors": generate_filtered_extractors(),
@@ -328,13 +329,24 @@ class Handler(BaseHTTPRequestHandler):
             ydl_opts["writeautomaticsub"] = True
             ydl_opts["writesubtitles"] = True
 
-            # web_creator now requires sign-in (fatal without cookies) and ios/web_safari only return
-            # SABR/PO-token-gated formats with no usable URL, so those clients yield nothing playable.
-            # android_vr is tokenless and still returns direct https URLs; web_safari/tv are kept as
-            # non-fatal extras (can still add HLS). This option is ignored by yt-dlp for non-youtube URLs.
-            # android_vr is also load-bearing for seeking: only its (n-less) URLs can be wrapped into
-            # a seekable manifest by index.js (see isThrottledUrl). Dropping it silently kills seeking.
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android_vr", "visionos", "web_safari", "tv"]}}
+            # by default, yt-dlp queries each url once per client listed. 
+            # Youtube returns different tracks to different clients. 
+
+            # As of this writing the list of player_clients used tend to return combined 720p/1080p m3u8 tracks which are handy to have
+            # We get different results depending on a combination of:
+            # 1. the order of the clients in the list
+            # 2. usage of POT
+            #
+            # web_safari: Must be first even if we request POT. For some reason if its not, we get no signed POT requests. (Bug in yt-dlp)
+            # visionos: Provides a mix of https tracks, and m3u8 tracks. https://github.com/yt-dlp/yt-dlp/issues/17226
+            # web_creator (removed): Only returns mhtml storyboards. Unplayable.
+            # android_vr (removed): Never returns any useful tracks even with POT.
+            # tv (removed): Only returns mhtml storyboards. Unplayable
+            # ios (removed): Uses SABR.
+            if pot[0] == "0":
+                ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android_vr", "visionos", "web_safari", "tv"]}}
+            else:
+                ydl_opts["extractor_args"] = {"youtube": {"player_client": ["web_safari", "visionos"], "fetch_pot": ["always"]}}
             self.ytdl_request(ydl_opts, qs["url"][0])
         elif url.path == "/process_playlist":
             ydl_opts["extract_flat"] = True
