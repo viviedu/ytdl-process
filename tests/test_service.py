@@ -178,8 +178,21 @@ class AudioTrackSelectionTest(unittest.TestCase):
         self.assertEqual(self.selected(formats), ["137", "140-17"])
 
     def test_takes_the_best_quality_where_no_track_names_a_language(self):
-        formats = [self.VIDEO, self.audio("139", 2, None, None), self.audio("140", 3, None, None)]
+        formats = [self.VIDEO, self.audio("139", 2, None, -1), self.audio("140", 3, None, -1)]
         self.assertEqual(self.selected(formats), ["137", "140"])
+
+    def test_ranks_a_track_with_no_language_preference_as_unknown(self):
+        unlabelled = {k: v for k, v in self.audio("140", 3, None, None).items() if k != "language_preference"}
+        formats = [self.VIDEO, unlabelled, self.audio("251-0", 4, "fr-FR", -1)]
+        self.assertEqual(self.selected(formats), ["137", "251-0"])
+
+    def test_takes_the_default_language_over_a_dub_of_higher_quality(self):
+        formats = [self.VIDEO, self.audio("251-0", 4, "fr-FR", -1), self.audio("140-5", 3, "en", 5)]
+        self.assertEqual(self.selected(formats), ["137", "140-5"])
+
+    def test_takes_a_dub_over_a_descriptive_track_of_higher_quality(self):
+        formats = [self.VIDEO, self.audio("251-desc", 4, "en-desc", -10), self.audio("140-0", 3, "ar", -1)]
+        self.assertEqual(self.selected(formats), ["137", "140-0"])
 
 
 if __name__ == "__main__":

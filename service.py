@@ -241,6 +241,9 @@ class Handler(BaseHTTPRequestHandler):
             return bool((f.get("vcodec") or "none") != "none")
         def format_contains_audio_track(f: dict):
             return bool((f.get("acodec") or "none") != "none")
+        def audio_language_preference(f: dict):
+            preference = f.get("language_preference")
+            return -1 if preference is None else preference
 
         quality_formats = [f for f in formats if format_contains_quality(f)]
         filtered_formats = [f for f in quality_formats if format_within_bitrate_limits(f)]
@@ -259,9 +262,11 @@ class Handler(BaseHTTPRequestHandler):
                 # we don't use the format filtering for audio only because they have low bitrates
                 audio_formats = [f for f in quality_formats if format_contains_audio_track(f) and not format_contains_video_track(f)]
                 # A YouTube video with dubbed audio lists one track per language at each
-                # quality, and yt-dlp gives the original language_preference 10 and a dub -1.
-                # Ranking quality alone takes the first dub of the top quality instead.
-                best_audio = max(audio_formats, default=None, key=lambda f: (f.get("language_preference") or 0, f["quality"]))
+                # quality, and yt-dlp gives the original language_preference 10, the default
+                # 5, a dub -1 and a descriptive track -10. Ranking quality alone takes the
+                # first dub of the top quality instead. A track with no language_preference
+                # ranks as yt-dlp's -1, unknown, rather than above the dubs.
+                best_audio = max(audio_formats, default=None, key=lambda f: (audio_language_preference(f), f["quality"]))
                 self.debug("selected audio format", { "audio": best_audio })
                 if best_audio is not None:
                     yield best_audio
