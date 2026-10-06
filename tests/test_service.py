@@ -2,7 +2,7 @@ import struct
 import unittest
 from unittest import mock
 
-from service import build_segment_ranges, collect_byte_ranges, inject_byte_ranges, inject_segment_ranges, parse_sidx
+from service import Handler, build_segment_ranges, collect_byte_ranges, inject_byte_ranges, inject_segment_ranges, parse_sidx
 
 
 class ByteRangeHookDriftGuardTest(unittest.TestCase):
@@ -155,6 +155,31 @@ class SegmentRangeInjectionTest(unittest.TestCase):
     def test_handles_missing_info_or_formats(self):
         inject_segment_ranges(None, None)
         inject_segment_ranges({}, None)
+
+
+class AudioTrackSelectionTest(unittest.TestCase):
+    VIDEO = {"format_id": "137", "vcodec": "avc1", "acodec": "none", "quality": 5, "tbr": 2000}
+
+    def audio(self, format_id, quality, language, language_preference):
+        return {"format_id": format_id, "vcodec": "none", "acodec": "mp4a.40.2", "quality": quality, "tbr": 128,
+                "language": language, "language_preference": language_preference}
+
+    def selected(self, formats):
+        handler = Handler.__new__(Handler)
+        with mock.patch.object(Handler, "debug"):
+            return [f["format_id"] for f in handler._ytdl_format_selector({"formats": formats})]
+
+    def test_takes_the_original_language_over_dubs_of_the_same_quality(self):
+        formats = [self.VIDEO, self.audio("140-0", 3, "ar", -1), self.audio("140-1", 3, "de-DE", -1), self.audio("140-17", 3, "en-US", 10)]
+        self.assertEqual(self.selected(formats), ["137", "140-17"])
+
+    def test_takes_the_original_language_over_a_dub_of_higher_quality(self):
+        formats = [self.VIDEO, self.audio("251-0", 4, "fr-FR", -1), self.audio("140-17", 3, "en-US", 10)]
+        self.assertEqual(self.selected(formats), ["137", "140-17"])
+
+    def test_takes_the_best_quality_where_no_track_names_a_language(self):
+        formats = [self.VIDEO, self.audio("139", 2, None, None), self.audio("140", 3, None, None)]
+        self.assertEqual(self.selected(formats), ["137", "140"])
 
 
 if __name__ == "__main__":

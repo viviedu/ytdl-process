@@ -258,7 +258,10 @@ class Handler(BaseHTTPRequestHandler):
             if not format_contains_audio_track(best_video):
                 # we don't use the format filtering for audio only because they have low bitrates
                 audio_formats = [f for f in quality_formats if format_contains_audio_track(f) and not format_contains_video_track(f)]
-                best_audio = max(audio_formats, default=None, key=lambda f: f["quality"])
+                # A YouTube video with dubbed audio lists one track per language at each
+                # quality, and yt-dlp gives the original language_preference 10 and a dub -1.
+                # Ranking quality alone takes the first dub of the top quality instead.
+                best_audio = max(audio_formats, default=None, key=lambda f: (f.get("language_preference") or 0, f["quality"]))
                 self.debug("selected audio format", { "audio": best_audio })
                 if best_audio is not None:
                     yield best_audio
