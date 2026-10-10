@@ -366,6 +366,7 @@ class Handler(BaseHTTPRequestHandler):
                 ydl_opts["retries"] = float("inf")  # I know this looks like a lot but we have the fragment tries limit below that we want to use
                 ydl_opts["fragment_retries"] = 5
                 ydl_opts["match_filter"] = self._duration_match_filter
+                ydl_opts["extractor_args"] = {"youtube": {"fetch_pot": ["never"]}}
 
                 download_res = self.download_track(ydl_opts, qs["url"][0])
                 self.respond(200, download_res)
