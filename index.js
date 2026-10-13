@@ -435,8 +435,10 @@ function findBestSubtitleFile(list, locales = []) {
   return Object.keys(list || {})
     .map((lang) => ({
       lang,
-      subs: list[lang].find((x) => (x.ext === 'vtt' && x.protocol !== 'http_dash_segments' && x.protocol !== 'm3u8_native')),
-      priority: uniqueLanguages.indexOf(lang.toLowerCase())
+      // skip machine-translated captions (tlang=), YouTube rate-limits them and the failure kills box playback
+      subs: list[lang].find((x) => (x.ext === 'vtt' && x.protocol !== 'http_dash_segments' && x.protocol !== 'm3u8_native' && !(x.url || '').includes('tlang='))),
+      // original-language auto captions are keyed 'xx-orig'
+      priority: uniqueLanguages.indexOf(lang.toLowerCase().replace(/-orig$/, ''))
     }))
     .filter((x) => x.subs)
     .sort((x, y) => y.priority - x.priority)[0];
