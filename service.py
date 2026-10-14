@@ -4,6 +4,7 @@ import traceback
 import shutil
 import argparse
 import json
+import os
 import re
 import struct
 import sys
@@ -19,6 +20,27 @@ from urllib.request import ProxyHandler, Request, build_opener
 from yt_dlp import YoutubeDL
 
 from generate_filtered_extractors import generate_filtered_extractors
+
+
+def _enable_player_cache():
+    """Reuse the preprocessed YouTube player across requests instead of downloading and parsing it per video.
+
+    Off upstream ("files are large and we do not support rotation"), so only callers that set
+    YTDL_PLAYER_CACHE=true opt in. The flag is yt-dlp internal: if an update moves it, stay off.
+    """
+    try:
+        from yt_dlp.extractor.youtube.jsc._builtin.ejs import EJSBaseJCP
+    except ImportError as ex:
+        print(json.dumps({"message": "player cache unavailable", "level": "warning", "extra_info": {"error": repr(ex)}}), file=stderr)
+        return
+    if not hasattr(EJSBaseJCP, "_ENABLE_PREPROCESSED_PLAYER_CACHE"):
+        print(json.dumps({"message": "player cache unavailable", "level": "warning", "extra_info": {"error": "flag not found"}}), file=stderr)
+        return
+    EJSBaseJCP._ENABLE_PREPROCESSED_PLAYER_CACHE = True
+
+
+if os.environ.get("YTDL_PLAYER_CACHE") == "true":
+    _enable_player_cache()
 
 MAX_DOWNLOAD_BIT_RATE_KB = 4000  # 4Mbps
 MIN_DOWNLOAD_BIT_RATE_KB = 1000  # 1Mbps
