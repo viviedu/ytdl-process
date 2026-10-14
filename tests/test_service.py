@@ -156,6 +156,28 @@ class SegmentRangeInjectionTest(unittest.TestCase):
         inject_segment_ranges(None, None)
         inject_segment_ranges({}, None)
 
+    def test_skips_everything_when_hls_is_available(self):
+        info = {
+            "formats": [
+                {"format_id": "140", "vcodec": "none", "ext": "m4a", "index_range": "632-1935", "url": "https://x/a"},
+                {"format_id": "96", "protocol": "m3u8_native", "url": "https://x/hls"},
+            ]
+        }
+        with mock.patch("service.build_segment_ranges") as build:
+            inject_segment_ranges(info, None)
+        build.assert_not_called()
+
+    def test_skips_dubbed_audio(self):
+        info = {
+            "formats": [
+                {"format_id": "140-0", "vcodec": "none", "ext": "m4a", "index_range": "632-1935", "url": "https://x/orig", "language": "en", "language_preference": 10},
+                {"format_id": "140-1", "vcodec": "none", "ext": "m4a", "index_range": "632-1935", "url": "https://x/dub", "language": "fr", "language_preference": -1},
+            ]
+        }
+        with mock.patch("service.build_segment_ranges", return_value=None) as build:
+            inject_segment_ranges(info, None)
+        self.assertEqual([call[0][0] for call in build.call_args_list], ["https://x/orig"])
+
 
 if __name__ == "__main__":
     unittest.main()
