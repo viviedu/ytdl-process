@@ -156,16 +156,38 @@ class SegmentRangeInjectionTest(unittest.TestCase):
         inject_segment_ranges(None, None)
         inject_segment_ranges({}, None)
 
-    def test_skips_everything_when_hls_is_available(self):
+    def test_skips_everything_when_hls_audio_is_available(self):
         info = {
             "formats": [
                 {"format_id": "140", "vcodec": "none", "ext": "m4a", "index_range": "632-1935", "url": "https://x/a"},
-                {"format_id": "96", "protocol": "m3u8_native", "url": "https://x/hls"},
+                {"format_id": "233", "vcodec": "none", "protocol": "m3u8_native", "url": "https://x/hls-audio"},
             ]
         }
         with mock.patch("service.build_segment_ranges") as build:
             inject_segment_ranges(info, None)
         build.assert_not_called()
+
+    def test_hls_video_without_hls_audio_still_reads(self):
+        info = {
+            "formats": [
+                {"format_id": "140", "vcodec": "none", "ext": "m4a", "index_range": "632-1935", "url": "https://x/a"},
+                {"format_id": "96", "vcodec": "avc1", "protocol": "m3u8_native", "url": "https://x/hls-video"},
+            ]
+        }
+        with mock.patch("service.build_segment_ranges", return_value=None) as build:
+            inject_segment_ranges(info, None)
+        self.assertEqual([call[0][0] for call in build.call_args_list], ["https://x/a"])
+
+    def test_keeps_unmarked_single_language_audio(self):
+        info = {
+            "formats": [
+                {"format_id": "139", "vcodec": "none", "ext": "m4a", "index_range": "632-1935", "url": "https://x/hi-low", "language": "hi", "language_preference": -1},
+                {"format_id": "140", "vcodec": "none", "ext": "m4a", "index_range": "632-1935", "url": "https://x/hi", "language": "hi", "language_preference": -1},
+            ]
+        }
+        with mock.patch("service.build_segment_ranges", return_value=None) as build:
+            inject_segment_ranges(info, None)
+        self.assertEqual([call[0][0] for call in build.call_args_list], ["https://x/hi-low", "https://x/hi"])
 
     def test_skips_dubbed_audio(self):
         info = {

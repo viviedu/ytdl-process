@@ -147,13 +147,15 @@ def inject_segment_ranges(info, proxy: str | None) -> None:
     for dubbed tracks. Skipped tracks keep the whole-file range, which still seeks.
     """
     formats = (info or {}).get("formats") or []
-    if any(f.get("protocol") == "m3u8_native" for f in formats):
+    # boxes pick HLS audio over the wrapped m4a, so it must be HLS audio, not just any HLS format
+    if any(f.get("vcodec") == "none" and "m3u8" in (f.get("protocol") or "") for f in formats):
         return
-    for f in formats:
-        if f.get("vcodec") != "none" or f.get("ext") != "m4a" or not f.get("index_range"):
-            continue
-        # yt-dlp marks the original audio 10 and the default 5
-        if f.get("language") and f.get("language_preference", -1) < 5:
+    candidates = [f for f in formats if f.get("vcodec") == "none" and f.get("ext") == "m4a" and f.get("index_range")]
+    # yt-dlp marks the original audio 10 and the default 5, everything else -1. A single-language
+    # video often has no marked track, so -1 only means dubbed when some track is marked.
+    has_marked_track = any(f.get("language_preference", -1) >= 5 for f in candidates)
+    for f in candidates:
+        if has_marked_track and f.get("language") and f.get("language_preference", -1) < 5:
             continue
         try:
             segments = build_segment_ranges(f["url"], f["index_range"], proxy)
