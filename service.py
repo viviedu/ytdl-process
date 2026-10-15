@@ -4,6 +4,7 @@ import traceback
 import shutil
 import argparse
 import json
+import os
 import re
 import struct
 import sys
@@ -183,7 +184,26 @@ def _install_byte_range_capture():
         print(json.dumps({"message": "byte-range capture unavailable", "level": "warning", "extra_info": {"error": repr(ex)}}), file=stderr)
 
 
+def _enable_player_cache():
+    """Turn on yt-dlp's internal cache of the YouTube player that its JS solver scripts run against
+    in the JS runtime, so the player isn't downloaded and parsed for every video.
+
+    If yt-dlp drops the flag we only lose the speed-up.
+    """
+    try:
+        from yt_dlp.extractor.youtube.jsc._builtin.ejs import EJSBaseJCP
+
+        if not hasattr(EJSBaseJCP, "_ENABLE_PREPROCESSED_PLAYER_CACHE"):
+            raise AttributeError("_ENABLE_PREPROCESSED_PLAYER_CACHE not found")
+        EJSBaseJCP._ENABLE_PREPROCESSED_PLAYER_CACHE = True
+    except Exception as ex:
+        print(json.dumps({"message": "player cache unavailable", "level": "warning", "extra_info": {"error": repr(ex)}}), file=stderr)
+
+
 _install_byte_range_capture()
+
+if os.environ.get("YTDL_PLAYER_CACHE") == "true":
+    _enable_player_cache()
 
 
 class Handler(BaseHTTPRequestHandler):
