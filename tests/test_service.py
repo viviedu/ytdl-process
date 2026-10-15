@@ -1,8 +1,10 @@
 import struct
+import sys
+import types
 import unittest
 from unittest import mock
 
-from service import build_segment_ranges, collect_byte_ranges, inject_byte_ranges, inject_segment_ranges, parse_sidx
+from service import _enable_player_cache, build_segment_ranges, collect_byte_ranges, inject_byte_ranges, inject_segment_ranges, parse_sidx
 
 
 class ByteRangeHookDriftGuardTest(unittest.TestCase):
@@ -199,6 +201,21 @@ class SegmentRangeInjectionTest(unittest.TestCase):
         with mock.patch("service.build_segment_ranges", return_value=None) as build:
             inject_segment_ranges(info, None)
         self.assertEqual([call[0][0] for call in build.call_args_list], ["https://x/orig"])
+
+
+EJS_MODULE = "yt_dlp.extractor.youtube.jsc._builtin.ejs"
+
+
+class PlayerCacheTest(unittest.TestCase):
+    def test_stays_off_when_the_flag_is_gone(self):
+        renamed_class = type("EJSBaseJCP", (), {})
+        with mock.patch.dict(sys.modules, {EJS_MODULE: types.SimpleNamespace(EJSBaseJCP=renamed_class)}):
+            _enable_player_cache()
+        self.assertFalse(hasattr(renamed_class, "_ENABLE_PREPROCESSED_PLAYER_CACHE"))
+
+    def test_stays_off_when_the_module_is_gone(self):
+        with mock.patch.dict(sys.modules, {EJS_MODULE: None}):
+            _enable_player_cache()  # ImportError is swallowed
 
 
 if __name__ == "__main__":
