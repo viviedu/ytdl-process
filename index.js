@@ -435,7 +435,13 @@ function findBestSubtitleFile(list, locales = []) {
   return Object.keys(list || {})
     .map((lang) => ({
       lang,
-      subs: list[lang].find((x) => (x.ext === 'vtt' && x.protocol !== 'http_dash_segments' && x.protocol !== 'm3u8_native')),
+      // Skip auto-translated captions. They often fail to load, which can freeze the video. Use the original captions instead.
+      subs: list[lang].find((x) => (
+        x.ext === 'vtt' &&
+        x.protocol !== 'http_dash_segments' &&
+        x.protocol !== 'm3u8_native' &&
+        !x.url?.includes('tlang=')
+      )),
       priority: uniqueLanguages.indexOf(lang.toLowerCase())
     }))
     .filter((x) => x.subs)
