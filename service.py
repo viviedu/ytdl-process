@@ -141,9 +141,20 @@ def inject_segment_ranges(info, proxy: str | None) -> None:
     A single whole-file range is one long-lived connection that googlevideo paces for the length of
     the video; a request per subsegment gets a fresh draw and its own retry. Costs one range fetch
     per track, so it is limited to the m4a audio formats index.js actually wraps.
+
+    Through the proxy each fetch is a slow round trip, and multi-language videos have dozens of
+    dubbed tracks, so it is skipped when HLS audio is available (the DASH tracks are the fallback) and
+    for dubbed tracks.
     """
-    for f in (info or {}).get("formats") or []:
-        if f.get("vcodec") != "none" or f.get("ext") != "m4a" or not f.get("index_range"):
+    formats = (info or {}).get("formats") or []
+    if any(f.get("vcodec") == "none" and "m3u8" in (f.get("protocol") or "") for f in formats):
+        return
+    candidates = [f for f in formats if f.get("vcodec") == "none" and f.get("ext") == "m4a" and f.get("index_range")]
+    # yt-dlp marks the original audio 10 and the default 5, everything else -1. A single-language
+    # video often has no marked track, so -1 only means dubbed when some track is marked.
+    has_marked_track = any(f.get("language_preference", -1) >= 5 for f in candidates)
+    for f in candidates:
+        if has_marked_track and f.get("language") and f.get("language_preference", -1) < 5:
             continue
         try:
             segments = build_segment_ranges(f["url"], f["index_range"], proxy)
