@@ -4,7 +4,7 @@ import types
 import unittest
 from unittest import mock
 
-from service import _enable_player_cache, build_segment_ranges, collect_byte_ranges, inject_byte_ranges, inject_segment_ranges, parse_sidx
+from service import Handler, _enable_player_cache, build_segment_ranges, collect_byte_ranges, inject_byte_ranges, inject_segment_ranges, parse_sidx
 
 
 class ByteRangeHookDriftGuardTest(unittest.TestCase):
@@ -216,6 +216,77 @@ class PlayerCacheTest(unittest.TestCase):
     def test_stays_off_when_the_module_is_gone(self):
         with mock.patch.dict(sys.modules, {EJS_MODULE: None}):
             _enable_player_cache()  # ImportError is swallowed
+
+
+class AudioTrackSelectionTest(unittest.TestCase):
+    VIDEO = {"format_id": "137", "vcodec": "avc1", "acodec": "none", "quality": 5, "tbr": 2000}
+
+    def audio(self, format_id, quality, language, language_preference):
+        return {"format_id": format_id, "vcodec": "none", "acodec": "mp4a.40.2", "quality": quality, "tbr": 128,
+                "language": language, "language_preference": language_preference}
+
+    def selected(self, formats):
+        handler = Handler.__new__(Handler)
+        with mock.patch.object(Handler, "debug"):
+            return [f["format_id"] for f in handler._ytdl_format_selector({"formats": formats})]
+
+    def test_takes_the_original_language_over_dubs_of_the_same_quality(self):
+        formats = [self.VIDEO, self.audio("140-0", 3, "ar", -1), self.audio("140-1", 3, "de-DE", -1), self.audio("140-17", 3, "en-US", 10)]
+        self.assertEqual(self.selected(formats), ["137", "140-17"])
+
+    def test_takes_the_original_language_over_a_dub_of_higher_quality(self):
+        formats = [self.VIDEO, self.audio("251-0", 4, "fr-FR", -1), self.audio("140-17", 3, "en-US", 10)]
+        self.assertEqual(self.selected(formats), ["137", "140-17"])
+
+    def test_takes_the_best_quality_where_no_track_names_a_language(self):
+        formats = [self.VIDEO, self.audio("139", 2, None, -1), self.audio("140", 3, None, -1)]
+        self.assertEqual(self.selected(formats), ["137", "140"])
+
+    def test_ranks_a_track_with_no_language_preference_as_unknown(self):
+        unlabelled = {k: v for k, v in self.audio("140", 3, None, None).items() if k != "language_preference"}
+        formats = [self.VIDEO, unlabelled, self.audio("251-0", 4, "fr-FR", -1)]
+        self.assertEqual(self.selected(formats), ["137", "251-0"])
+
+    def test_takes_the_default_language_over_a_dub_of_higher_quality(self):
+        formats = [self.VIDEO, self.audio("251-0", 4, "fr-FR", -1), self.audio("140-5", 3, "en", 5)]
+        self.assertEqual(self.selected(formats), ["137", "140-5"])
+
+    def test_takes_a_dub_over_a_descriptive_track_of_higher_quality(self):
+        formats = [self.VIDEO, self.audio("251-desc", 4, "en-desc", -10), self.audio("140-0", 3, "ar", -1)]
+        self.assertEqual(self.selected(formats), ["137", "140-0"])
+
+    def test_takes_an_english_dub_over_a_non_english_original(self):
+        formats = [self.VIDEO, self.audio("140-17", 3, "ar", 10), self.audio("251-0", 4, "en-US", -1), self.audio("140-3", 3, "de-DE", -1)]
+        self.assertEqual(self.selected(formats), ["137", "251-0"])
+
+    def test_takes_an_english_original_over_an_arabic_dub_of_higher_quality(self):
+        formats = [self.VIDEO, self.audio("251-0", 4, "ar", -1), self.audio("140-17", 3, "en-US", 10)]
+        self.assertEqual(self.selected(formats), ["137", "140-17"])
+
+    def test_takes_the_original_where_no_track_is_english(self):
+        formats = [self.VIDEO, self.audio("251-0", 4, "ar", -1), self.audio("140-17", 3, "de-DE", 10), self.audio("251-3", 4, "fr-FR", -1)]
+        self.assertEqual(self.selected(formats), ["137", "140-17"])
+
+    def test_takes_a_non_descriptive_english_track_over_an_english_descriptive_one(self):
+        formats = [self.VIDEO, self.audio("251-desc", 4, "en-desc", -10), self.audio("140-0", 3, "en-US", -1)]
+        self.assertEqual(self.selected(formats), ["137", "140-0"])
+
+    def test_takes_the_original_over_an_english_descriptive_track(self):
+        formats = [self.VIDEO, self.audio("251-desc", 4, "en-desc", -10), self.audio("140-17", 3, "ja", 10)]
+        self.assertEqual(self.selected(formats), ["137", "140-17"])
+
+    def test_ranks_a_track_with_no_language_and_no_language_preference_as_unknown(self):
+        bare = {"format_id": "251", "vcodec": "none", "acodec": "mp4a.40.2", "quality": 4, "tbr": 128}
+        formats = [self.VIDEO, bare, self.audio("140-5", 3, "de-DE", 5)]
+        self.assertEqual(self.selected(formats), ["137", "140-5"])
+
+    def test_counts_a_regional_code_as_english(self):
+        formats = [self.VIDEO, self.audio("140-17", 3, "de-DE", 10), self.audio("140-2", 3, "en-GB", -1)]
+        self.assertEqual(self.selected(formats), ["137", "140-2"])
+
+    def test_counts_an_english_code_in_any_case(self):
+        formats = [self.VIDEO, self.audio("140-17", 3, "de-DE", 10), self.audio("140-2", 3, "EN-gb", -1)]
+        self.assertEqual(self.selected(formats), ["137", "140-2"])
 
 
 if __name__ == "__main__":
