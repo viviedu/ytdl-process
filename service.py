@@ -26,6 +26,9 @@ MIN_DOWNLOAD_BIT_RATE_KB = 1000  # 1Mbps
 
 MAX_DOWNLOAD_DURATION_SECONDS = 60 * 60  # 1 hour
 
+# yt-dlp's language_preference for an audio description track.
+DESCRIPTIVE_LANGUAGE_PREFERENCE = -10
+
 # The sidx read sits in the resolve path, so it gets a short leash.
 SIDX_FETCH_TIMEOUT_SECONDS = 5
 
@@ -272,6 +275,12 @@ class Handler(BaseHTTPRequestHandler):
             return bool((f.get("vcodec") or "none") != "none")
         def format_contains_audio_track(f: dict):
             return bool((f.get("acodec") or "none") != "none")
+        def audio_language_preference(f: dict):
+            preference = f.get("language_preference")
+            return -1 if preference is None else preference
+        def audio_is_english(f: dict):
+            primary_subtag = re.split(r"[-_]", (f.get("language") or "").lower())[0]
+            return primary_subtag == "en" and audio_language_preference(f) != DESCRIPTIVE_LANGUAGE_PREFERENCE
 
         quality_formats = [f for f in formats if format_contains_quality(f)]
         filtered_formats = [f for f in quality_formats if format_within_bitrate_limits(f)]
@@ -289,7 +298,11 @@ class Handler(BaseHTTPRequestHandler):
             if not format_contains_audio_track(best_video):
                 # we don't use the format filtering for audio only because they have low bitrates
                 audio_formats = [f for f in quality_formats if format_contains_audio_track(f) and not format_contains_video_track(f)]
-                best_audio = max(audio_formats, default=None, key=lambda f: f["quality"])
+                # A YouTube video with dubbed audio lists one track per language at each
+                # quality. An English track wins, unless it is an audio description. Then
+                # yt-dlp's language_preference: original 10, default 5, dub -1, unknown -1.
+                # Quality breaks the remaining ties.
+                best_audio = max(audio_formats, default=None, key=lambda f: (audio_is_english(f), audio_language_preference(f), f["quality"]))
                 self.debug("selected audio format", { "audio": best_audio })
                 if best_audio is not None:
                     yield best_audio
