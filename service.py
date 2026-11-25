@@ -347,7 +347,7 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
         proxy_url = qs.get("proxy_url")
-        version = qs.get("version", "2")
+        version = qs.get("version", "4")
         pot = qs.get("pot", "1")
 
         ydl_opts = {

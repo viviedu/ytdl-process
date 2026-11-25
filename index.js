@@ -228,7 +228,7 @@ module.exports.process = (output, origin) => {
     };
   }
 
-  throw 'no url';
+  return undefined;
 };
 
 // Creates fake manifests for DASH. Should be used on iMX after version 2.8.5
@@ -269,7 +269,7 @@ module.exports.processV2 = (output, origin) => {
     };
   }
 
-  throw 'no url';
+  return undefined;
 };
 
 // processV3 returns a list of video tracks instead of a single one
@@ -471,12 +471,17 @@ function processVideoFormats(formats, isStream, preferUnthrottled = false, prefe
   const tracks = [];
 
   if (isStream) {
-    // Livestreams will always have a combined m3u8 track, return this.
+    // Livestreams usually have a combined m3u8 track, return this.
+    // If a height range (e.g. 1080p) has no combined track, return the split track instead.
     // (For a livestream, ALL its tracks are m3u8. This means if we decide to return split tracks for
     // a livestream, it will be a m3u8 audio track and a m3u8 video track.)
-    tracks.push(filteredFormats.find((format) => (format.height <= 2160 && format.height > 1080 && format.acodec !== 'none')));
-    tracks.push(filteredFormats.find((format) => (format.height <= 1080 && format.height > 720 && format.acodec !== 'none')));
-    tracks.push(filteredFormats.find((format) => (format.height <= 720 && format.acodec !== 'none')));
+    const combinedOrSplit = (minHeight, maxHeight) => {
+      const inBand = filteredFormats.filter((format) => format.height > minHeight && format.height <= maxHeight);
+      return inBand.find((format) => format.acodec !== 'none') || inBand.find((format) => format.acodec === 'none');
+    };
+    tracks.push(combinedOrSplit(1080, 2160));
+    tracks.push(combinedOrSplit(720, 1080));
+    tracks.push(combinedOrSplit(0, 720));
   } else {
     // Non-livestreams
 
